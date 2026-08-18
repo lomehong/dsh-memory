@@ -1,0 +1,6 @@
+- insert:
+    - id: dsh-memory
+      name: '@dsh-extra/dsh-memory'
+      provide: [dsh-memory]
+      inject: [webServer]
+      config: {}
