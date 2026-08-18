@@ -134,8 +134,8 @@ node scripts/build-client.mjs
 
 ```bash
 # 复制到 DSH web profile
-Copy-Item "lib\*" "C:\Users\hz0703021\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\lib\" -Recurse -Force
-Copy-Item "package.json" "C:\Users\hz0703021\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\" -Force
+Copy-Item "lib\*" "~\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\lib\" -Recurse -Force
+Copy-Item "package.json" "~\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\" -Force
 ```
 
 ### 3. 注册到 DSH
@@ -174,8 +174,8 @@ npx tsc -b tsconfig.json
 node scripts/build-client.mjs
 
 # 同步到 profile
-Copy-Item "lib\*" "C:\Users\hz0703021\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\lib\" -Recurse -Force
-Copy-Item "package.json" "C:\Users\hz0703021\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\" -Force
+Copy-Item "lib\*" "~\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\lib\" -Recurse -Force
+Copy-Item "package.json" "~\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory\" -Force
 ```
 
 ## 与 im-channel 的集成
