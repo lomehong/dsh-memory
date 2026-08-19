@@ -11,7 +11,6 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 export declare const name = "dsh-memory";
-export declare const inject: string[];
 export declare const provide: string[];
 export declare function apply(ctx: Context): void;
 export { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts';

@@ -16,7 +16,10 @@ import { loadSharedMemory, filterMemoriesByUser, addMemoryEntry, clearSharedMemo
 import type { MemoryEntry } from './memory-store.ts'
 
 export const name = 'dsh-memory'
-export const inject = ['webServer']
+// webServer 不是硬依赖：核心功能（provide 服务 + 工具注册）不需要 webServer，
+// 只有 HTTP API 路由需要（apply 里用 ctx.inject 可选注入）。
+// 去掉硬依赖声明，让插件尽早加载并 provide 'dsh-memory' 服务，
+// 避免 im-channel 等 consumer 在 agent 创建时 ctx.get('dsh-memory') 返回 undefined。
 export const provide = ['dsh-memory']
 
 export function apply(ctx: Context): void {

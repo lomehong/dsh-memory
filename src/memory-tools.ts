@@ -192,14 +192,37 @@ export function registerMemoryTools(
   }
 
   try {
-    const agent = agentCtx as unknown as { tools?: { register?: (tool: unknown) => void } }
-    agent.tools?.register?.(writeTool)
-    agent.tools?.register?.(readTool)
-    // 仅主人可注册 update/delete 工具
-    if (isMaster) {
-      agent.tools?.register?.(updateTool)
-      agent.tools?.register?.(deleteTool)
+    const agent = agentCtx as unknown as {
+      tools?: {
+        register?: (tool: unknown) => (() => void) | void
+      }
+      effect?: (callback: () => (() => void) | void) => (() => void) | void
+      logger?: { warn?: (...args: unknown[]) => void; info?: (...args: unknown[]) => void }
     }
+    if (agent.tools === undefined || typeof agent.tools.register !== 'function') {
+      // tools 服务未就绪：这不是致命错误（某些 agent 组合可能没有 tools 服务），
+      // 但要留痕，否则工具静默缺失极难排查。
+      agent.logger?.warn?.('[dsh-memory] agent 上下文无 tools.register，跳过记忆工具注册')
+      return
+    }
+    const register = agent.tools.register
+    const disposers: Array<() => void> = []
+    const track = (tool: unknown): void => {
+      const dispose = register(tool)
+      if (typeof dispose === 'function') disposers.push(dispose)
+    }
+    track(writeTool)
+    track(readTool)
+    if (isMaster) {
+      track(updateTool)
+      track(deleteTool)
+    }
+    // 把工具注册的 disposer 绑定到 agentCtx 生命周期：
+    // agent dispose 时工具自动注销，避免泄漏或「工具残留但 agent 已销毁」。
+    if (typeof agent.effect === 'function') {
+      agent.effect(() => () => { for (const d of disposers) { try { d() } catch { /* ignore */ } } })
+    }
+    agent.logger?.info?.(`[dsh-memory] 已注册记忆工具 (${isMaster ? '主人: read/write/update/delete' : '访客: read/write'})`)
   } catch (error) {
     console.error('[dsh-memory] 注册工具失败:', error)
   }
