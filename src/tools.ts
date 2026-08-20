@@ -10,26 +10,12 @@
  * @module @dsh-extra/dsh-memory/tools
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
+import { registerMemoryTools } from './memory-tools.ts'
 
 export const name = 'tool-memory'
-export const inject = ['tools', 'systemPrompt']
+export const inject = ['tools']
 
 export function apply(ctx: Context): void {
   // preset 组合中注册记忆工具。web GUI 用户是主人，isMaster=true。
-  // IM 通道 agent 的 setup 回调会再次注册（shadow 这里的），带正确 userId/isMaster。
   registerMemoryTools(ctx, 'master', true)
-
-  // 注入记忆摘要到系统提示词（让 agent 知道有记忆可读）
-  const summary = getMemorySummaryForUser('master', true)
-  if (summary) {
-    const sp = ctx as unknown as {
-      systemPrompt?: { section: (opts: { name: string; order: number; text: string }) => void }
-    }
-    sp.systemPrompt?.section({
-      name: 'tool:memory',
-      order: 106,
-      text: summary,
-    })
-  }
 }

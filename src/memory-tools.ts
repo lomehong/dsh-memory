@@ -192,10 +192,11 @@ export function registerMemoryTools(
       agent.logger?.warn?.('[dsh-memory] agent 上下文无 tools.register，跳过记忆工具注册')
       return
     }
-    const register = agent.tools.register
     const disposers: Array<() => void> = []
     const track = (tool: unknown): void => {
-      const dispose = register(tool)
+      // 必须以方法调用保持 this 上下文（ToolRuntime 实例），
+      // 提取为独立变量会丢失 this 导致 "Cannot read properties of undefined (reading 'layers')"
+      const dispose = agent.tools!.register!(tool)
       if (typeof dispose === 'function') disposers.push(dispose)
     }
     track(writeTool)
