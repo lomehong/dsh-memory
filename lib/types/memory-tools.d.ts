@@ -4,6 +4,7 @@
  * 注册两个工具到 DSH agent：
  *   - memory_write：写入记忆
  *   - memory_read：读取记忆（自动按权限过滤）
+ *   - memory_update / memory_delete（仅主人）
  */
 import type { Context } from '@deepseek-ai/cordis';
 /** 注册共享记忆工具到 agent 上下文 */

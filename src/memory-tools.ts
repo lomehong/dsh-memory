@@ -4,10 +4,12 @@
  * 注册两个工具到 DSH agent：
  *   - memory_write：写入记忆
  *   - memory_read：读取记忆（自动按权限过滤）
+ *   - memory_update / memory_delete（仅主人）
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { addMemoryEntry, loadSharedMemory, filterMemoriesByUser, searchMemories, updateMemoryEntry, deleteMemoryEntry } from './memory-store.ts'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** 注册共享记忆工具到 agent 上下文 */
 export function registerMemoryTools(
@@ -16,7 +18,7 @@ export function registerMemoryTools(
   isMaster: boolean,
 ): void {
   // memory_write 工具
-  const writeTool = {
+  const writeTool = defineTool({
     name: 'memory_write',
     description: '写入一条共享记忆，让其他会话（包括访客）也能知道这件事。重要：如果创建了日程、待办或涉及其他人（如会议参与者），请务必在 participants 参数中传入他们的 userid，这样他们才能看到这条记忆。主人写入默认仅主人可见，访客写入默认仅主人和该访客可见。',
     parameters: {
@@ -67,10 +69,10 @@ export function registerMemoryTools(
       return { ok: true, id: entry.id, scope: entry.scope }
     },
     isConcurrencySafe: () => false,
-  }
+  })
 
   // memory_read 工具
-  const readTool = {
+  const readTool = defineTool({
     name: 'memory_read',
     description: '读取共享记忆。按关键词搜索有权限查看的记忆，返回匹配结果。',
     parameters: {
@@ -117,10 +119,10 @@ export function registerMemoryTools(
       }
     },
     isConcurrencySafe: () => true,
-  }
+  })
 
   // memory_update 工具（仅主人可用）
-  const updateTool = {
+  const updateTool = defineTool({
     name: 'memory_update',
     description: '更新一条已有的共享记忆。可以修改内容、可见范围、参与者等。仅主人可用。',
     parameters: {
@@ -160,10 +162,10 @@ export function registerMemoryTools(
       return { ok: true, id: result.id }
     },
     isConcurrencySafe: () => false,
-  }
+  })
 
   // memory_delete 工具（仅主人可用）
-  const deleteTool = {
+  const deleteTool = defineTool({
     name: 'memory_delete',
     description: '删除一条共享记忆。仅主人可用。',
     parameters: {
@@ -189,7 +191,7 @@ export function registerMemoryTools(
       return ok ? { ok: true } : { ok: false, error: '未找到该记忆' }
     },
     isConcurrencySafe: () => false,
-  }
+  })
 
   try {
     const agent = agentCtx as unknown as {

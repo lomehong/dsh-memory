@@ -15,3 +15,8 @@ declare module '@deepseek-ai/cordis' {
 declare module '@deepseek-ai/dsh-session' {
   export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[]
 }
+
+declare module '@deepseek-ai/dsh-tools' {
+  /** defineTool 把原始工具定义包装成 tools.register 接受的 ToolDefinition（带 marker）。 */
+  export function defineTool(options: unknown): unknown
+}
