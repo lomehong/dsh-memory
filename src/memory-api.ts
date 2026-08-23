@@ -4,6 +4,7 @@
  * 提供 RESTful API 供设置页面查看和管理共享记忆。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { randomBytes } from 'node:crypto'
 import { loadSharedMemory, clearSharedMemory, addMemoryEntry, updateMemoryEntry, deleteMemoryEntry, pruneExpiredMemories } from './memory-store.ts'
 import { serveAdminPage } from './memory-admin-page.ts'
 
@@ -32,6 +33,16 @@ function respondJson(res: ServerResponse, status: number, data: Record<string, u
   res.end(JSON.stringify(data))
 }
 
+/** 校验写操作的自定义请求头 token（跨域表单/脚本无法携带自定义头，因此同时起到 CSRF 防护作用） */
+function hasAdminToken(req: IncomingMessage, token: string): boolean {
+  return req.headers['x-memory-token'] === token
+}
+
+/** 拒绝未通过 token 校验的写请求 */
+function unauthorized(res: ServerResponse): void {
+  respondJson(res, 401, { ok: false, error: '缺少或无效的校验 token（x-memory-token）' })
+}
+
 /** 获取错误信息 */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -41,15 +52,31 @@ function messageOf(error: unknown): string {
 export function registerMemoryApi(web: {
   register: (route: { kind: string; path: string; handler: (req: unknown, res: unknown) => void }) => void
 }): void {
+  // 写操作统一由启动时随机生成的 token 门禁：外部扫描器/跨站请求无法携带该自定义头。
+  // 待 DSH webServer 未来在请求上携带会话身份后，应升级为真正的用户级鉴权。
+  const adminToken = randomBytes(16).toString('hex')
+
   // GET /dsh-memory - 管理页面
   web.register({
     kind: 'exact',
     path: '/dsh-memory',
     handler: (_req: unknown, res: unknown) => {
-      serveAdminPage(res as ServerResponse)
+      serveAdminPage(res as ServerResponse, adminToken)
     },
   })
+
+  // GET /dsh-memory/token - 下发写操作校验 token（供对话 Tab 等内置客户端使用）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-memory/token',
+    handler: (_req: unknown, res: unknown) => {
+      respondJson(res as ServerResponse, 200, { ok: true, token: adminToken })
+    },
+  })
+
   // GET /dsh-memory/entries - 获取所有记忆（用于管理页面）
+  // 注意：当前 DSH webServer 未在请求上附带用户身份，此处返回全部条目；
+  // 待身份可用后，应在此用 filterMemoriesByUser 做按身份的权限过滤。
   web.register({
     kind: 'exact',
     path: '/dsh-memory/entries',
@@ -68,6 +95,10 @@ export function registerMemoryApi(web: {
     kind: 'exact',
     path: '/dsh-memory/entries',
     handler: async (req: unknown, res: unknown) => {
+      if (!hasAdminToken(req as IncomingMessage, adminToken)) {
+        unauthorized(res as ServerResponse)
+        return
+      }
       try {
         const body = await readJsonBody(req as IncomingMessage) as { content?: string; type?: string; scope?: string; participants?: string[] }
         if (typeof body.content !== 'string' || !body.content.trim()) {
@@ -75,7 +106,7 @@ export function registerMemoryApi(web: {
           return
         }
         const participants = Array.isArray(body.participants) ? body.participants.filter((p): p is string => typeof p === 'string') : undefined
-        const entry = addMemoryEntry({
+        const entry = await addMemoryEntry({
           content: body.content.trim(),
           type: typeof body.type === 'string' ? body.type : 'note',
           scope: (body.scope === 'master' || body.scope === 'self' || body.scope === 'public') ? body.scope : 'master',
@@ -98,9 +129,13 @@ export function registerMemoryApi(web: {
   web.register({
     kind: 'exact',
     path: '/dsh-memory/clear',
-    handler: (_req: unknown, res: unknown) => {
+    handler: async (_req: unknown, res: unknown) => {
+      if (!hasAdminToken(_req as IncomingMessage, adminToken)) {
+        unauthorized(res as ServerResponse)
+        return
+      }
       try {
-        const ok = clearSharedMemory()
+        const ok = await clearSharedMemory()
         respondJson(res as ServerResponse, 200, { ok })
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
@@ -113,6 +148,10 @@ export function registerMemoryApi(web: {
     kind: 'exact',
     path: '/dsh-memory/entries/update',
     handler: async (req: unknown, res: unknown) => {
+      if (!hasAdminToken(req as IncomingMessage, adminToken)) {
+        unauthorized(res as ServerResponse)
+        return
+      }
       try {
         const body = await readJsonBody(req as IncomingMessage) as { id?: string; content?: string; scope?: string; participants?: string[] }
         if (typeof body.id !== 'string' || !body.id) {
@@ -127,7 +166,7 @@ export function registerMemoryApi(web: {
         if (Array.isArray(body.participants)) {
           updates.participants = body.participants.filter((p): p is string => typeof p === 'string')
         }
-        const result = updateMemoryEntry(body.id, updates)
+        const result = await updateMemoryEntry(body.id, updates)
         if (result === null) {
           respondJson(res as ServerResponse, 404, { ok: false, error: '未找到该记忆' })
         } else {
@@ -144,13 +183,17 @@ export function registerMemoryApi(web: {
     kind: 'exact',
     path: '/dsh-memory/entries/delete',
     handler: async (req: unknown, res: unknown) => {
+      if (!hasAdminToken(req as IncomingMessage, adminToken)) {
+        unauthorized(res as ServerResponse)
+        return
+      }
       try {
         const body = await readJsonBody(req as IncomingMessage) as { id?: string }
         if (typeof body.id !== 'string' || !body.id) {
           respondJson(res as ServerResponse, 400, { ok: false, error: '需要 id' })
           return
         }
-        const ok = deleteMemoryEntry(body.id)
+        const ok = await deleteMemoryEntry(body.id)
         respondJson(res as ServerResponse, ok ? 200 : 404, { ok })
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
@@ -162,9 +205,13 @@ export function registerMemoryApi(web: {
   web.register({
     kind: 'exact',
     path: '/dsh-memory/prune',
-    handler: (_req: unknown, res: unknown) => {
+    handler: async (_req: unknown, res: unknown) => {
+      if (!hasAdminToken(_req as IncomingMessage, adminToken)) {
+        unauthorized(res as ServerResponse)
+        return
+      }
       try {
-        const count = pruneExpiredMemories()
+        const count = await pruneExpiredMemories()
         respondJson(res as ServerResponse, 200, { ok: true, pruned: count })
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })

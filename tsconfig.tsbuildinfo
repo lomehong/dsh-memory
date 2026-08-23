@@ -1,1 +1,1 @@
-{"root":["./src/index.ts","./src/memory-admin-page.ts","./src/memory-api.ts","./src/memory-store.ts","./src/memory-tools.ts","./src/types.d.ts"],"version":"5.9.3"}
+{"root":["./src/index.ts","./src/memory-admin-page.ts","./src/memory-api.ts","./src/memory-store.ts","./src/memory-tools.ts","./src/tools.ts","./src/types.d.ts"],"version":"5.9.3"}

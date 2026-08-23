@@ -7,7 +7,7 @@
 - **跨会话共享记忆** — 主人和访客各有独立会话，但记忆互通
 - **细粒度权限控制** — 三级 scope + 参与者机制，保护隐私
 - **DSH 工具集成** — 提供 `memory_read` / `memory_write` / `memory_update` / `memory_delete` 四个工具
-- **记忆过期机制** — 支持设置过期时间，自动清理过期记忆
+- **记忆过期机制** — 支持设置过期时间，插件加载时与定期自动清理过期记忆
 - **Web 管理页面** — 浏览器访问 `/dsh-memory` 管理记忆
 - **对话 Tab 集成** — 在 DSH 对话区域添加「记忆」Tab（第三个 Tab）
 
@@ -17,18 +17,18 @@
 
 | scope | 含义 | 谁可读 |
 |-------|------|--------|
-| `master` | 仅主人可见 | 仅主人 |
-| `self` | 仅主人 + 当事人 | 主人 + 记录的作者（如果访客写入） |
+| `master` | 仅主人可见 | 主人 + participants |
+| `self` | 当事人范围（访客写入默认） | 主人 + 记录的作者 + participants |
 | `public` | 所有人可见 | 任何人 |
 
 ### 扩展规则
 
-当 `scope` 为 `master` 且 `participants` 非空时，当事人（participants 列表中的用户）也可读。
+`participants` 在 `master` 和 `self` 两种 scope 下均生效：当事人（participants 列表中的用户）可读。
 
 ### 默认行为
 
-- 主人写入 → 默认 `scope: master`（仅主人可见）
-- 访客写入 → 默认 `scope: self`（主人 + 该访客可见）
+- 主人写入 → 默认 `scope: master`（仅主人 + 参与者可见）
+- 访客写入 → 默认 `scope: self`（主人 + 该访客 + 参与者可见）；访客不可写 `master` 范围，传入时回落为 `self`
 - 写入时传 `participants` 参数可将当事人加入可见列表
 
 ### 实际场景示例
@@ -103,11 +103,14 @@ memory_delete({
 |------|------|------|
 | GET | `/dsh-memory` | 管理页面 |
 | GET | `/dsh-memory/entries` | 获取所有记忆 |
-| POST | `/dsh-memory/entries` | 添加记忆 |
-| POST | `/dsh-memory/entries/update` | 更新记忆 |
-| POST | `/dsh-memory/entries/delete` | 删除记忆 |
-| POST | `/dsh-memory/clear` | 清除所有记忆 |
-| POST | `/dsh-memory/prune` | 清除过期记忆 |
+| GET | `/dsh-memory/token` | 获取写操作校验 token |
+| POST | `/dsh-memory/entries` | 添加记忆 🔒 |
+| POST | `/dsh-memory/entries/update` | 更新记忆 🔒 |
+| POST | `/dsh-memory/entries/delete` | 删除记忆 🔒 |
+| POST | `/dsh-memory/clear` | 清除所有记忆 🔒 |
+| POST | `/dsh-memory/prune` | 清除过期记忆 🔒 |
+
+🔒 = 需携带 `x-memory-token` 请求头。token 由插件启动时随机生成，通过管理页面内联注入或 `GET /dsh-memory/token` 下发；自定义请求头跨域不可携带，因此同时起到 CSRF 防护作用。待 DSH webServer 提供会话身份后，将进一步升级为用户级鉴权与读端点权限过滤。
 
 ## 安装
 
@@ -218,7 +221,7 @@ Copy-Item "package.json" "~\.dsh\profiles\web\node_modules\@dsh-extra\dsh-memory
 
 ### 并发控制
 
-使用自旋文件锁（`shared-memory.json.lock`）避免并发写入覆盖。写入采用先写临时文件再原子重命名的方式，防止写入中断导致文件损坏。最多保留 500 条记忆。
+所有读-改-写操作都在自旋文件锁（`shared-memory.json.lock`）内完成整个事务，避免并发写入覆盖或丢失更新。写入采用先写临时文件再原子重命名的方式，防止写入中断导致文件损坏。锁等待为异步重试（不阻塞事件循环），锁文件超过 15s 视为崩溃残留会被自动接管；损坏的存储文件会备份为 `.corrupt-<时间戳>` 而非静默覆盖。最多保留 500 条记忆。
 
 ## 许可
 

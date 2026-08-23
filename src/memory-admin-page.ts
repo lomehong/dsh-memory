@@ -6,7 +6,7 @@
  */
 import type { ServerResponse } from 'node:http'
 
-export function serveAdminPage(res: ServerResponse): void {
+export function serveAdminPage(res: ServerResponse, adminToken: string): void {
   const html = [
     '<!DOCTYPE html>',
     '<html lang="zh-CN">',
@@ -83,8 +83,10 @@ export function serveAdminPage(res: ServerResponse): void {
     '<div class="btn-row"><button class="btn btn-sm" id="btnCancelEdit">取消</button><button class="btn btn-primary btn-sm" id="btnEditConfirm">保存</button></div>',
     '</div></div>',
     '<script>',
+    // 写操作校验 token 由服务端注入（hex 串，可安全内联）
+    'window.__MT__=' + JSON.stringify(adminToken) + ';',
     'function api(path,method,body){',
-    'var opts={method:method||"GET",headers:{Accept:"application/json"}};',
+    'var opts={method:method||"GET",headers:{Accept:"application/json","x-memory-token":window.__MT__||""}};',
     'if(body){opts.headers["Content-Type"]="application/json";opts.body=JSON.stringify(body)}',
     'return fetch(path,opts).then(function(r){return r.json()})',
     '}',

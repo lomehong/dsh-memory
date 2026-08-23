@@ -20,12 +20,12 @@ export function registerMemoryTools(
   // memory_write 工具
   const writeTool = defineTool({
     name: 'memory_write',
-    description: '写入一条共享记忆，让其他会话（包括访客）也能知道这件事。重要：如果创建了日程、待办或涉及其他人（如会议参与者），请务必在 participants 参数中传入他们的 userid，这样他们才能看到这条记忆。主人写入默认仅主人可见，访客写入默认仅主人和该访客可见。',
+    description: '写入一条共享记忆，让其他会话（包括访客）也能知道这件事。重要：如果创建了日程、待办或涉及其他人（如会议参与者），请务必在 participants 参数中传入他们的 userid，他们即可读到这条记忆。主人写入默认仅主人可见；访客写入默认对主人、作者本人和参与者可见（访客不可写 master 范围）。',
     parameters: {
       content: { type: 'string', required: true, description: '记忆内容，简洁清晰地描述发生了什么' },
       type: { type: 'string', description: '记忆类型：schedule_created/todo_created/decision/note/conversation_summary，默认 note' },
-      scope: { type: 'string', description: `可见范围：master=仅主人可见, self=主人+当事人, public=所有人可见，默认 ${isMaster ? 'master' : 'self'}` },
-      participants: { type: 'array', items: { type: 'string' }, description: '关联当事人 userid 列表。重要：如果这条记忆涉及其他人（如会议参与者、待办负责人），请务必传入他们的 userid，这样他们才能通过 memory_read 查看到这条记忆' },
+      scope: { type: 'string', description: `可见范围：master=仅主人可见${isMaster ? '' : '（仅主人可用）'}, self=主人+作者+参与者, public=所有人可见，默认 ${isMaster ? 'master' : 'self'}` },
+      participants: { type: 'array', items: { type: 'string' }, description: '关联当事人 userid 列表。重要：如果这条记忆涉及其他人（如会议参与者、待办负责人），请务必传入他们的 userid，他们即可通过 memory_read 查看到这条记忆' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -42,9 +42,12 @@ export function registerMemoryTools(
       if (!content.trim()) return { ok: false, error: '内容不能为空' }
 
       const type = typeof args.type === 'string' ? args.type : 'note'
-      const scope = typeof args.scope === 'string' && ['master', 'self', 'public'].includes(args.scope)
-        ? args.scope as 'master' | 'self' | 'public'
-        : (isMaster ? 'master' : 'self')
+      let scope: 'master' | 'self' | 'public' =
+        typeof args.scope === 'string' && ['master', 'self', 'public'].includes(args.scope)
+          ? args.scope as 'master' | 'self' | 'public'
+          : (isMaster ? 'master' : 'self')
+      // 访客不允许写 master-only 记忆（既无意义又易误导），统一回落为 self
+      if (!isMaster && scope === 'master') scope = 'self'
 
       let participants: string[] | undefined
       if (Array.isArray(args.participants)) {
@@ -52,7 +55,7 @@ export function registerMemoryTools(
         if (participants.length === 0) participants = undefined
       }
 
-      const entry = addMemoryEntry({
+      const entry = await addMemoryEntry({
         content,
         type,
         scope,
@@ -146,7 +149,7 @@ export function registerMemoryTools(
         updates.participants = args.participants.filter((p): p is string => typeof p === 'string')
       }
 
-      const result = updateMemoryEntry(id, updates)
+      const result = await updateMemoryEntry(id, updates)
       if (result === null) return { ok: false, error: '未找到该记忆或更新失败' }
       return { ok: true, id: result.id }
     },
@@ -172,7 +175,7 @@ export function registerMemoryTools(
     execute: async (args: Record<string, unknown>): Promise<JsonValue> => {
       const id = typeof args.id === 'string' ? args.id : ''
       if (!id) return { ok: false, error: '需要 id' }
-      const ok = deleteMemoryEntry(id)
+      const ok = await deleteMemoryEntry(id)
       return ok ? { ok: true } : { ok: false, error: '未找到该记忆' }
     },
     isConcurrencySafe: () => false,
@@ -216,10 +219,26 @@ export function registerMemoryTools(
   }
 }
 
-/** 获取记忆摘要（用于注入系统提示词） */
+/**
+ * 获取记忆摘要（用于注入系统提示词）
+ *
+ * 只注入真实的元信息（条数、类型分布、最近写入时间），不声称“相关”——
+ * 是否相关由模型调用 memory_read 后自行判断。
+ */
 export function getMemorySummaryForUser(userId: string, isMaster: boolean): string {
   const allEntries = loadSharedMemory()
   const allowed = filterMemoriesByUser(allEntries, userId, isMaster)
   if (allowed.length === 0) return ''
-  return `【共享记忆】你有 ${allowed.length} 条相关记忆，可能包含之前创建的日程、待办或重要信息。请使用 memory_read 工具查看这些记忆，了解上下文后再回答用户的问题。`
+
+  const typeCounts = new Map<string, number>()
+  for (const e of allowed) typeCounts.set(e.type, (typeCounts.get(e.type) ?? 0) + 1)
+  const breakdown = [...typeCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([t, n]) => `${t}×${n}`)
+    .join('、')
+  const latest = allowed[allowed.length - 1]
+  const latestTime = latest ? latest.timestamp.slice(0, 19).replace('T', ' ') : '未知'
+
+  return `【共享记忆】你共有 ${allowed.length} 条共享记忆（${breakdown}；最近一条写入于 ${latestTime}），可能包含之前创建的日程、待办或重要信息。请使用 memory_read 工具查看这些记忆，了解上下文后再回答用户的问题。`
 }

@@ -22,10 +22,13 @@ const SCOPE_LABELS: Record<string, string> = { master: '仅主人', self: '当�
 const SCOPE_COLORS: Record<string, string> = { master: '#fff3cd', self: '#d4edda', public: '#cce5ff' }
 const SCOPE_TEXT: Record<string, string> = { master: '#856404', self: '#155724', public: '#004085' }
 
-async function api(path: string, method = 'GET', body?: unknown): Promise<Record<string, unknown>> {
-  const opts: RequestInit = { method, headers: { Accept: 'application/json' } }
+async function api(path: string, method = 'GET', body?: unknown, token?: string): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  // 写操作需携带服务端下发的校验 token（自定义头同时起到 CSRF 防护作用）
+  if (token) headers['x-memory-token'] = token
+  const opts: RequestInit = { method, headers }
   if (body) {
-    opts.headers = { ...opts.headers, 'Content-Type': 'application/json' }
+    headers['Content-Type'] = 'application/json'
     opts.body = JSON.stringify(body)
   }
   const res = await fetch(path, opts)
@@ -34,6 +37,7 @@ async function api(path: string, method = 'GET', body?: unknown): Promise<Record
 
 export function MemoryView(_props: ConvViewProps): JSX.Element {
   const [entries, setEntries] = useState<MemoryEntry[]>([])
+  const [token, setToken] = useState('')
   const [search, setSearch] = useState('')
   const [scopeFilter, setScopeFilter] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -47,11 +51,19 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
   const [editParticipants, setEditParticipants] = useState('')
 
   const load = useCallback(async () => {
-    const d = await api('/dsh-memory/entries', 'GET')
-    setEntries((d.entries as MemoryEntry[]) ?? [])
+    try {
+      const d = await api('/dsh-memory/entries', 'GET')
+      setEntries((d.entries as MemoryEntry[]) ?? [])
+    } catch {
+      // API 不可用时保持空列表，不阻断页面
+    }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    // 获取写操作校验 token，供添加/编辑/删除等变更请求携带
+    api('/dsh-memory/token', 'GET').then(d => { setToken(String(d.token ?? '')) }).catch(() => {})
+  }, [load])
 
   const filtered = entries.filter(e => {
     if (search && !e.content.toLowerCase().includes(search.toLowerCase()) && !e.type.toLowerCase().includes(search.toLowerCase())) return false
@@ -65,7 +77,7 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
   async function handleAdd() {
     if (!addContent.trim()) { alert('请输入内容'); return }
     const p = addParticipants.split(',').map(s => s.trim()).filter(Boolean)
-    const r = await api('/dsh-memory/entries', 'POST', { content: addContent, type: addType, scope: addScope, participants: p })
+    const r = await api('/dsh-memory/entries', 'POST', { content: addContent, type: addType, scope: addScope, participants: p }, token)
     if (r.ok) { setShowAdd(false); setAddContent(''); setAddParticipants(''); load() }
     else { alert('添加失败: ' + (r.error || '未知错误')) }
   }
@@ -73,25 +85,25 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
   async function handleEdit() {
     if (!editId) return
     const p = editParticipants.split(',').map(s => s.trim()).filter(Boolean)
-    const r = await api('/dsh-memory/entries/update', 'POST', { id: editId, content: editContent, scope: editScope, participants: p })
+    const r = await api('/dsh-memory/entries/update', 'POST', { id: editId, content: editContent, scope: editScope, participants: p }, token)
     if (r.ok) { setEditId(null); load() }
     else { alert('更新失败: ' + (r.error || '未知错误')) }
   }
 
   async function handleDelete(id: string) {
     if (!confirm('确定删除？')) return
-    const r = await api('/dsh-memory/entries/delete', 'POST', { id })
+    const r = await api('/dsh-memory/entries/delete', 'POST', { id }, token)
     if (r.ok) load()
   }
 
   async function handleClear() {
     if (!confirm('确定清除所有记忆？')) return
-    const r = await api('/dsh-memory/clear', 'POST')
+    const r = await api('/dsh-memory/clear', 'POST', undefined, token)
     if (r.ok) load()
   }
 
   async function handlePrune() {
-    const r = await api('/dsh-memory/prune', 'POST')
+    const r = await api('/dsh-memory/prune', 'POST', undefined, token)
     if (r.ok) { load(); alert('已清除 ' + (r.pruned ?? 0) + ' 条过期记忆') }
   }
 

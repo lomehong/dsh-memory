@@ -5,4 +5,4 @@
  * 通过 GET /dsh-memory 访问。
  */
 import type { ServerResponse } from 'node:http';
-export declare function serveAdminPage(res: ServerResponse): void;
+export declare function serveAdminPage(res: ServerResponse, adminToken: string): void;

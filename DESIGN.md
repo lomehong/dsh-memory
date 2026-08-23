@@ -13,13 +13,15 @@
 
 | scope | 含义 | 谁可读 |
 |-------|------|--------|
-| `master` | 仅主人可见 | 仅主人 |
-| `self` | 仅主人 + 当事人可见 | 主人 + 记录的作者（如果 author 是访客） |
+| `master` | 仅主人可见 | 主人 + participants |
+| `self` | 当事人范围（访客写入默认） | 主人 + 记录的作者 + participants |
 | `public` | 所有人可见 | 任何人 |
 
 ### 扩展规则
 
-当 `scope` 为 `master` 且 `participants` 非空时，当事人（participants 列表中的用户）也可读。
+`participants` 在 `master` 和 `self` 两种 scope 下均生效：当事人（participants 列表中的用户）可读。
+
+身份约束：访客写入不允许使用 `master` scope，传入时统一回落为 `self`；`memory_update` / `memory_delete` 工具仅注册给主人。
 
 ### 实际场景
 
@@ -63,7 +65,12 @@ interface MemoryEntry {
 
 ### 并发控制
 
-采用 append-only + 文件锁（`proper-lockfile` 或自旋锁），避免并发写入覆盖。
+所有读-改-写操作（新增/更新/删除/清除/过期清理）都在文件锁（`shared-memory.json.lock`）内完成整个事务，避免并发写入覆盖或丢失更新；写入采用先写临时文件再原子重命名的方式，防止写入中断导致文件损坏。锁细节：
+
+- 异步自旋重试（50ms 间隔、总超时 5s），不阻塞事件循环
+- 锁文件超过 15s 视为持有者崩溃残留，直接接管，避免永久死锁
+- 损坏的 JSON 文件会被重命名备份为 `.corrupt-<时间戳>`，历史可人工恢复，避免下一次写入静默覆盖
+- 最多保留 500 条记忆（超出时淘汰最旧）
 
 ## 四、DSH 工具
 
@@ -90,10 +97,10 @@ memory_read({
 
 ## 五、系统提示词注入
 
-每次对话开始时，不注入具体记忆内容，只注入元信息：
+每次对话开始时，不注入具体记忆内容，只注入真实的元信息（条数、类型分布、最近写入时间，不声称“相关”）：
 
 ```
-【共享记忆】你有 3 条相关记忆。如果需要查看，请使用 memory_read 工具。
+【共享记忆】你共有 3 条共享记忆（note×2、schedule_created×1；最近一条写入于 2026-08-23 09:00:00）。请使用 memory_read 工具查看。
 ```
 
 实际记忆检索通过 `memory_read` 工具触发，后端做权限过滤。
@@ -112,17 +119,18 @@ memory_read({
 ### Phase 1（当前）
 
 - 独立插件 `dsh-memory`
-- 基本存储（append-only + 文件锁）
-- `memory_write` / `memory_read` 工具
+- 基本存储（事务性文件锁 + 原子写入）
+- `memory_write` / `memory_read` / `memory_update` / `memory_delete` 工具
 - 权限过滤（按 scope + participants + author）
 - 系统提示词元信息注入
-- HTTP API 路由
+- HTTP API 路由（写操作由随机 token 门禁，兼具 CSRF 防护）
+- 过期记忆自动清理（插件加载时 + 定期）
 
 ### Phase 2（后续）
 
 - 访客权限面板集成
-- 记忆编辑/删除/过期
-- Web UI 记忆管理面板
+- API 层用户级鉴权与读端点权限过滤（依赖 DSH webServer 提供会话身份）
+- 记忆去重/整合、检索质量升级
 
 ## 八、目录结构
 

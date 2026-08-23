@@ -9,5 +9,10 @@
 import type { Context } from '@deepseek-ai/cordis';
 /** 注册共享记忆工具到 agent 上下文 */
 export declare function registerMemoryTools(agentCtx: Context, userId: string, isMaster: boolean): void;
-/** 获取记忆摘要（用于注入系统提示词） */
+/**
+ * 获取记忆摘要（用于注入系统提示词）
+ *
+ * 只注入真实的元信息（条数、类型分布、最近写入时间），不声称“相关”——
+ * 是否相关由模型调用 memory_read 后自行判断。
+ */
 export declare function getMemorySummaryForUser(userId: string, isMaster: boolean): string;
