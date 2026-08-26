@@ -74,51 +74,46 @@ export function registerMemoryApi(web: {
     },
   })
 
-  // GET /dsh-memory/entries - 获取所有记忆（用于管理页面）
-  // 注意：当前 DSH webServer 未在请求上附带用户身份，此处返回全部条目；
-  // 待身份可用后，应在此用 filterMemoriesByUser 做按身份的权限过滤。
-  web.register({
-    kind: 'exact',
-    path: '/dsh-memory/entries',
-    handler: (_req: unknown, res: unknown) => {
-      try {
-        const entries = loadSharedMemory()
-        respondJson(res as ServerResponse, 200, { ok: true, entries, total: entries.length })
-      } catch (error) {
-        respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
-      }
-    },
-  })
-
-  // POST /dsh-memory/entries - 添加记忆（管理页面手动添加）
+  // /dsh-memory/entries - 单一路由按方法分发（GET 列表 / POST 新增）。
+  // 修复：同 path 用 kind:'exact' 注册两次会让 webServer 冲突、导致清除/更新/删除/清理等后续路由全部注册失败。
+  // 注意：当前 DSH webServer 未在请求上附带用户身份，此处返回全部条目；待身份可用后应做按身份的权限过滤。
   web.register({
     kind: 'exact',
     path: '/dsh-memory/entries',
     handler: async (req: unknown, res: unknown) => {
-      if (!hasAdminToken(req as IncomingMessage, adminToken)) {
-        unauthorized(res as ServerResponse)
+      if (req && typeof req === 'object' && (req as IncomingMessage).method === 'POST') {
+        if (!hasAdminToken(req as IncomingMessage, adminToken)) {
+          unauthorized(res as ServerResponse)
+          return
+        }
+        try {
+          const body = await readJsonBody(req as IncomingMessage) as { content?: string; type?: string; scope?: string; participants?: string[] }
+          if (typeof body.content !== 'string' || !body.content.trim()) {
+            respondJson(res as ServerResponse, 400, { ok: false, error: '需要 content' })
+            return
+          }
+          const participants = Array.isArray(body.participants) ? body.participants.filter((p): p is string => typeof p === 'string') : undefined
+          const entry = await addMemoryEntry({
+            content: body.content.trim(),
+            type: typeof body.type === 'string' ? body.type : 'note',
+            scope: (body.scope === 'master' || body.scope === 'self' || body.scope === 'public') ? body.scope : 'master',
+            author: 'admin',
+            authorRole: 'master',
+            ...(participants !== undefined ? { participants } : {}),
+          })
+          if (entry === null) {
+            respondJson(res as ServerResponse, 500, { ok: false, error: '写入失败（并发冲突）' })
+          } else {
+            respondJson(res as ServerResponse, 200, { ok: true, entry })
+          }
+        } catch (error) {
+          respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
+        }
         return
       }
       try {
-        const body = await readJsonBody(req as IncomingMessage) as { content?: string; type?: string; scope?: string; participants?: string[] }
-        if (typeof body.content !== 'string' || !body.content.trim()) {
-          respondJson(res as ServerResponse, 400, { ok: false, error: '需要 content' })
-          return
-        }
-        const participants = Array.isArray(body.participants) ? body.participants.filter((p): p is string => typeof p === 'string') : undefined
-        const entry = await addMemoryEntry({
-          content: body.content.trim(),
-          type: typeof body.type === 'string' ? body.type : 'note',
-          scope: (body.scope === 'master' || body.scope === 'self' || body.scope === 'public') ? body.scope : 'master',
-          author: 'admin',
-          authorRole: 'master',
-          ...(participants !== undefined ? { participants } : {}),
-        })
-        if (entry === null) {
-          respondJson(res as ServerResponse, 500, { ok: false, error: '写入失败（并发冲突）' })
-        } else {
-          respondJson(res as ServerResponse, 200, { ok: true, entry })
-        }
+        const entries = loadSharedMemory()
+        respondJson(res as ServerResponse, 200, { ok: true, entries, total: entries.length })
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
       }
