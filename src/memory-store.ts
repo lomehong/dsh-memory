@@ -60,6 +60,27 @@ export interface MemoryLifecycle {
   reason?: string
 }
 
+/** 判断状态（v2.1，移植自 Decision Assistant 六维状态）：证据支持度轨道，与陈述类型分开维护 */
+export type SupportState = '提议中' | '已支持' | '已动摇'
+
+export interface MemorySupport {
+  state: SupportState
+  since: string
+  /** 支持度变化的依据 */
+  basis?: string
+}
+
+/** 关系轨（v2.1）：分身对单个对话者的观察/推断与开环（轻量类型，与事实轨分开治理） */
+export type RelationKind = '观察' | '推断'
+
+export interface MemoryRelation {
+  /** 注册表实体 id */
+  actorId: string
+  kind: RelationKind
+  /** 未闭环事项：承诺过什么、待跟进什么（closedAt 缺省 = 未闭环） */
+  openLoop?: { openedAt: string; closedAt?: string; via?: string }
+}
+
 /** 记忆条目（v2：新增可选认识论字段，旧条目缺省按 候选/当前/未验证 解释） */
 export interface MemoryEntry {
   id: string
@@ -85,6 +106,10 @@ export interface MemoryEntry {
   lifecycle?: MemoryLifecycle
   /** 复核提示日期（ISO 日期），到期提示复核 */
   reviewBy?: string
+  /** 判断状态（v2.1）：缺省读取按「提议中」解释 */
+  support?: MemorySupport
+  /** 关系轨（v2.1）：仅 type='relation' 条目携带 */
+  relation?: MemoryRelation
 }
 
 /** 存储结构（活跃与归档文件同构） */
@@ -100,6 +125,11 @@ export function effectiveStatementType(e: MemoryEntry): StatementType {
 /** 读取侧兼容：缺省生命周期按「当前」解释 */
 export function effectiveLifecycle(e: MemoryEntry): LifecycleState {
   return e.lifecycle?.state ?? '当前'
+}
+
+/** 读取侧兼容：缺省判断状态按「提议中」解释（fail-closed：没标的就是未核实） */
+export function effectiveSupport(e: MemoryEntry): SupportState {
+  return e.support?.state ?? '提议中'
 }
 
 /** 最多保留的活跃记忆条数 */
@@ -318,6 +348,8 @@ export async function addMemoryEntry(
     ...(entry.auth !== undefined ? { auth: entry.auth } : {}),
     ...(entry.verify !== undefined ? { verify: entry.verify } : {}),
     ...(entry.reviewBy !== undefined ? { reviewBy: entry.reviewBy } : {}),
+    ...(entry.support !== undefined ? { support: entry.support } : {}),
+    ...(entry.relation !== undefined ? { relation: entry.relation } : {}),
     statementType,
   })
 
@@ -577,4 +609,95 @@ export async function pruneExpiredMemories(): Promise<number> {
     return entries.length - filtered.length
   })
   return result.locked ? result.value : 0
+}
+
+/* ── v2.1：判断状态轨道 + 关系轨（轻量类型） ── */
+
+export interface SupportUpdate {
+  state: SupportState
+  basis?: string
+}
+
+/**
+ * 更新判断状态（v2.1 权限类变更：原地改，不产生替代链——支持度不是陈述，
+ * 是对陈述的证据态度）。仅主人可调用（调用方保证）。
+ */
+export async function updateMemorySupport(
+  id: string,
+  update: SupportUpdate,
+): Promise<MemoryEntry | null> {
+  const result = await withLock((): MemoryEntry | null => {
+    const entries = loadSharedMemory()
+    const entry = entries.find(e => e.id === id)
+    if (entry === undefined) return null
+    entry.support = { state: update.state, since: new Date().toISOString(), ...(update.basis !== undefined ? { basis: update.basis.slice(0, 200) } : {}) }
+    writeEntriesUnlocked(entries)
+    return entry
+  })
+  return result.locked ? result.value : null
+}
+
+export interface RelationEntryInput {
+  actorId: string
+  kind: RelationKind
+  content: string
+  /** 开环：分身代表主人承诺过什么 / 待跟进什么 */
+  openLoop?: { via?: string }
+  authorRole?: 'master' | 'guest'
+}
+
+/**
+ * 写入一条关系轨条目（v2.1）：type='relation'，scope='self'，participants=[actorId]——
+ * 复用既有 filterMemoriesByUser：主人全可见、当事人可见、他人不可见。
+ * statementType 强制「候选」（观察/推断不是事实）；openLoop 缺省视为未闭环。
+ */
+export async function addRelationEntry(input: RelationEntryInput): Promise<MemoryEntry | null> {
+  const content = input.content.trim()
+  if (content === '') return null
+  const actorId = input.actorId.trim()
+  if (actorId === '') return null
+  const nowIso = new Date().toISOString()
+  return addMemoryEntry({
+    type: 'relation',
+    content,
+    scope: 'self',
+    author: 'twin',
+    authorRole: input.authorRole ?? 'master',
+    participants: [actorId],
+    statementType: '候选',
+    ...(input.openLoop !== undefined || input.kind === '观察'
+      ? { relation: {
+          actorId,
+          kind: input.kind,
+          ...(input.openLoop !== undefined ? { openLoop: { openedAt: nowIso, ...(input.openLoop.via !== undefined ? { via: input.openLoop.via } : {}) } } : {}),
+        } }
+      : { relation: { actorId, kind: input.kind } }),
+  })
+}
+
+/** 闭环一条关系轨开环（主人确认事项已完成/已推翻） */
+export async function closeOpenLoop(memoryId: string, via: string = '主人确认'): Promise<MemoryEntry | null> {
+  const result = await withLock((): MemoryEntry | null => {
+    const entries = loadSharedMemory()
+    const entry = entries.find(e => e.id === memoryId && e.relation !== undefined)
+    if (entry === undefined || entry.relation?.openLoop === undefined) return null
+    if (entry.relation.openLoop.closedAt !== undefined) return entry
+    entry.relation.openLoop.closedAt = new Date().toISOString()
+    entry.relation.openLoop.via = via
+    writeEntriesUnlocked(entries)
+    return entry
+  })
+  return result.locked ? result.value : null
+}
+
+/** 查询某对话者的未闭环事项 */
+export function openLoopsForActor(actorId: string): MemoryEntry[] {
+  return loadSharedMemory().filter(
+    e =>
+      effectiveLifecycle(e) === '当前' &&
+      e.relation !== undefined &&
+      e.relation.actorId === actorId &&
+      e.relation.openLoop !== undefined &&
+      e.relation.openLoop.closedAt === undefined,
+  )
 }

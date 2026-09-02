@@ -11,6 +11,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { registerMemoryApi } from './memory-api.ts'
+import { registerAssembleApi } from './memory-assemble.ts'
 import { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
 import {
   loadSharedMemory,
@@ -75,7 +76,8 @@ export function apply(ctx: Context): void {
       register: (route: { kind: string; path: string; handler: (req: unknown, res: unknown) => void }) => void
     }
     registerMemoryApi(web)
-    ctx.logger?.info?.('[dsh-memory] API 路由已注册')
+    registerAssembleApi(web)
+    ctx.logger?.info?.('[dsh-memory] API 路由已注册（含 v2.1 assemble/回执）')
   })
 }
 

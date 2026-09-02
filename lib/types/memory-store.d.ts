@@ -36,6 +36,27 @@ export interface MemoryLifecycle {
     supersededBy?: string;
     reason?: string;
 }
+/** 判断状态（v2.1，移植自 Decision Assistant 六维状态）：证据支持度轨道，与陈述类型分开维护 */
+export type SupportState = '提议中' | '已支持' | '已动摇';
+export interface MemorySupport {
+    state: SupportState;
+    since: string;
+    /** 支持度变化的依据 */
+    basis?: string;
+}
+/** 关系轨（v2.1）：分身对单个对话者的观察/推断与开环（轻量类型，与事实轨分开治理） */
+export type RelationKind = '观察' | '推断';
+export interface MemoryRelation {
+    /** 注册表实体 id */
+    actorId: string;
+    kind: RelationKind;
+    /** 未闭环事项：承诺过什么、待跟进什么（closedAt 缺省 = 未闭环） */
+    openLoop?: {
+        openedAt: string;
+        closedAt?: string;
+        via?: string;
+    };
+}
 /** 记忆条目（v2：新增可选认识论字段，旧条目缺省按 候选/当前/未验证 解释） */
 export interface MemoryEntry {
     id: string;
@@ -61,6 +82,10 @@ export interface MemoryEntry {
     lifecycle?: MemoryLifecycle;
     /** 复核提示日期（ISO 日期），到期提示复核 */
     reviewBy?: string;
+    /** 判断状态（v2.1）：缺省读取按「提议中」解释 */
+    support?: MemorySupport;
+    /** 关系轨（v2.1）：仅 type='relation' 条目携带 */
+    relation?: MemoryRelation;
 }
 /** 存储结构（活跃与归档文件同构） */
 export interface SharedMemoryStore {
@@ -70,6 +95,8 @@ export interface SharedMemoryStore {
 export declare function effectiveStatementType(e: MemoryEntry): StatementType;
 /** 读取侧兼容：缺省生命周期按「当前」解释 */
 export declare function effectiveLifecycle(e: MemoryEntry): LifecycleState;
+/** 读取侧兼容：缺省判断状态按「提议中」解释（fail-closed：没标的就是未核实） */
+export declare function effectiveSupport(e: MemoryEntry): SupportState;
 /** 最多保留的活跃记忆条数 */
 export declare const MAX_ENTRIES = 500;
 /** 归档区上限，超出按最旧 FIFO 裁剪 */
@@ -153,3 +180,32 @@ export declare function markMemorySuperseded(id: string, supersededBy: string, r
 export declare function deleteMemoryEntry(id: string): Promise<boolean>;
 /** 清除过期的记忆，返回清理数量（TTL 本身即「自declared 短命」，语义不变） */
 export declare function pruneExpiredMemories(): Promise<number>;
+export interface SupportUpdate {
+    state: SupportState;
+    basis?: string;
+}
+/**
+ * 更新判断状态（v2.1 权限类变更：原地改，不产生替代链——支持度不是陈述，
+ * 是对陈述的证据态度）。仅主人可调用（调用方保证）。
+ */
+export declare function updateMemorySupport(id: string, update: SupportUpdate): Promise<MemoryEntry | null>;
+export interface RelationEntryInput {
+    actorId: string;
+    kind: RelationKind;
+    content: string;
+    /** 开环：分身代表主人承诺过什么 / 待跟进什么 */
+    openLoop?: {
+        via?: string;
+    };
+    authorRole?: 'master' | 'guest';
+}
+/**
+ * 写入一条关系轨条目（v2.1）：type='relation'，scope='self'，participants=[actorId]——
+ * 复用既有 filterMemoriesByUser：主人全可见、当事人可见、他人不可见。
+ * statementType 强制「候选」（观察/推断不是事实）；openLoop 缺省视为未闭环。
+ */
+export declare function addRelationEntry(input: RelationEntryInput): Promise<MemoryEntry | null>;
+/** 闭环一条关系轨开环（主人确认事项已完成/已推翻） */
+export declare function closeOpenLoop(memoryId: string, via?: string): Promise<MemoryEntry | null>;
+/** 查询某对话者的未闭环事项 */
+export declare function openLoopsForActor(actorId: string): MemoryEntry[];
