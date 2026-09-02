@@ -2,6 +2,8 @@ import { type MemoryEntry, type StatementType, type SupportState } from './memor
 export interface AssembleViewer {
     userId: string;
     isMaster: boolean;
+    /** v2 增：当前对话者注册表 id（用于关系摘要回注；缺省 = 不回注关系段） */
+    actorId?: string;
 }
 export interface AssembleQuery {
     keywords?: string[];
@@ -18,6 +20,24 @@ export interface ReceiptItem {
     support: SupportState;
     visibilityRule: 'master' | 'public' | 'participant' | 'self-author';
 }
+export interface RelationDigestItem {
+    memoryId: string;
+    content: string;
+    kind: '观察' | '推断';
+    /** 「推断」标记；观察项此字段为空字符串 */
+    inferred: string;
+    /** 未闭环时间戳（仅开环项） */
+    openLoopAt?: string;
+    ts: string;
+}
+export interface RelationDigest {
+    actorId: string;
+    openLoops: RelationDigestItem[];
+    observations: RelationDigestItem[];
+    bytes: number;
+    sha256: string;
+    truncated: boolean;
+}
 export interface AssemblyReceipt {
     turnId: string;
     at: string;
@@ -28,6 +48,8 @@ export interface AssemblyReceipt {
     items: ReceiptItem[];
     totalBytes: number;
     packSha256: string;
+    /** v2 增：actorId 命中时随 pack 一起装配的关系摘要段 */
+    relationDigest?: RelationDigest;
 }
 export interface AssembleResult {
     pack: MemoryEntry[];

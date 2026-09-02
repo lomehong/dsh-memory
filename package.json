@@ -1,7 +1,7 @@
 {
   "name": "@dsh-extra/dsh-memory",
-  "version": "0.1.0",
-  "description": "共享记忆插件：为 DSH agent 提供跨会话共享记忆能力",
+  "version": "0.1.1",
+  "description": "v2：assemble 支持 actorId 关系摘要段自动回注 + /dsh-memory/openloop/close 开环闭环路由",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
