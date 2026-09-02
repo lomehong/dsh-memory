@@ -14,5 +14,5 @@ export declare const name = "dsh-memory";
 export declare const provide: string[];
 export declare function apply(ctx: Context): void;
 export { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts';
-export { loadSharedMemory, filterMemoriesByUser, addMemoryEntry, clearSharedMemory, updateMemoryEntry, deleteMemoryEntry, pruneExpiredMemories } from './memory-store.ts';
-export type { MemoryEntry } from './memory-store.ts';
+export { loadSharedMemory, loadArchivedMemories, filterMemoriesByUser, filterMemoriesForRead, addMemoryEntry, clearSharedMemory, updateMemoryEntry, supersedeMemoryEntry, markMemorySuperseded, archiveMemoryEntry, deleteMemoryEntry, pruneExpiredMemories, effectiveStatementType, effectiveLifecycle, MAX_ENTRIES, MAX_ARCHIVE_ENTRIES, } from './memory-store.ts';
+export type { MemoryEntry, StatementType, LifecycleState, MemorySource, MemoryAuth, MemoryVerify, MemoryLifecycle, } from './memory-store.ts';

@@ -101,16 +101,28 @@ memory_delete({
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/dsh-memory` | 管理页面 |
+| GET | `/dsh-memory` | 管理页面（治理视图：陈述类型分布/替代链/归档区） |
 | GET | `/dsh-memory/entries` | 获取所有记忆 |
 | GET | `/dsh-memory/token` | 获取写操作校验 token |
-| POST | `/dsh-memory/entries` | 添加记忆 🔒 |
-| POST | `/dsh-memory/entries/update` | 更新记忆 🔒 |
+| GET | `/dsh-memory/archive` | 获取归档区记忆 |
+| POST | `/dsh-memory/entries` | 添加记忆 🔒（支持 `statementType`/`source`/`auth`/`verify`） |
+| POST | `/dsh-memory/entries/update` | 更新记忆 🔒（内容/陈述变更走替代链，历史保留） |
 | POST | `/dsh-memory/entries/delete` | 删除记忆 🔒 |
-| POST | `/dsh-memory/clear` | 清除所有记忆 🔒 |
+| POST | `/dsh-memory/entries/archive` | 归档记忆 🔒（不删除，可查回） |
+| POST | `/dsh-memory/clear` | 清除所有活跃记忆 🔒（归档区保留） |
 | POST | `/dsh-memory/prune` | 清除过期记忆 🔒 |
 
 🔒 = 需携带 `x-memory-token` 请求头。token 由插件启动时随机生成，通过管理页面内联注入或 `GET /dsh-memory/token` 下发；自定义请求头跨域不可携带，因此同时起到 CSRF 防护作用。待 DSH webServer 提供会话身份后，将进一步升级为用户级鉴权与读端点权限过滤。
+
+## 决策记忆治理（v2）
+
+认识论 schema 与治理语义详见 [docs/决策记忆治理-设计.md](docs/决策记忆治理-设计.md)（移植自 Decision Assistant 决策助手脚手架）。要点：
+
+- **六类陈述类型**：每条记忆可标 `事实/推断/偏好/候选/授权/已验证结果`；缺省读取按「候选」解释。写入默认值即治理——主人亲述默认`事实`，访客与外部消息默认`候选`。
+- **来源归因**：`source.origin`（human/conversation/yuyi_message/tool_result/seed/api）+ `ref` 引用；来源登记 ≠ 事实晋升。
+- **授权记录**：`授权`类条目带四元组 `auth { status, by, via, range }`；不可逆动作前可 `memory_read(statementType: '授权')` 查授权依据。
+- **替代链**：`memory_update` 的内容/陈述变更生成新记录并与旧记录双向链接（`supersedes`/`supersededBy`），不覆盖历史。
+- **归档区**：活跃集 500 条上限，超限者按淘汰优先级（已替代 → 候选类 → 其他 → 授权最后）移入归档文件而非删除；归档可经 `memory_read(includeArchived)` 或管理页查回。
 
 ## 安装
 

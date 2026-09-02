@@ -12,8 +12,23 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { registerMemoryApi } from './memory-api.ts'
 import { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
-import { loadSharedMemory, filterMemoriesByUser, addMemoryEntry, clearSharedMemory, updateMemoryEntry, deleteMemoryEntry, pruneExpiredMemories } from './memory-store.ts'
-import type { MemoryEntry } from './memory-store.ts'
+import {
+  loadSharedMemory,
+  loadArchivedMemories,
+  filterMemoriesByUser,
+  filterMemoriesForRead,
+  addMemoryEntry,
+  clearSharedMemory,
+  updateMemoryEntry,
+  supersedeMemoryEntry,
+  markMemorySuperseded,
+  archiveMemoryEntry,
+  deleteMemoryEntry,
+  pruneExpiredMemories,
+  effectiveStatementType,
+  effectiveLifecycle,
+} from './memory-store.ts'
+import type { MemoryEntry, StatementType, LifecycleState, MemorySource, MemoryAuth, MemoryVerify, MemoryLifecycle } from './memory-store.ts'
 
 export const name = 'dsh-memory'
 // webServer 不是硬依赖：核心功能（provide 服务 + 工具注册）不需要 webServer，
@@ -30,12 +45,19 @@ export function apply(ctx: Context): void {
     registerMemoryTools,
     getMemorySummaryForUser,
     loadSharedMemory,
+    loadArchivedMemories,
     filterMemoriesByUser,
+    filterMemoriesForRead,
     addMemoryEntry,
     clearSharedMemory,
     updateMemoryEntry,
+    supersedeMemoryEntry,
+    markMemorySuperseded,
+    archiveMemoryEntry,
     deleteMemoryEntry,
     pruneExpiredMemories,
+    effectiveStatementType,
+    effectiveLifecycle,
   }
   ;(ctx as unknown as { provide: (name: string, value: unknown) => void }).provide('dsh-memory', memoryService)
 
@@ -58,5 +80,30 @@ export function apply(ctx: Context): void {
 }
 
 export { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
-export { loadSharedMemory, filterMemoriesByUser, addMemoryEntry, clearSharedMemory, updateMemoryEntry, deleteMemoryEntry, pruneExpiredMemories } from './memory-store.ts'
-export type { MemoryEntry } from './memory-store.ts'
+export {
+  loadSharedMemory,
+  loadArchivedMemories,
+  filterMemoriesByUser,
+  filterMemoriesForRead,
+  addMemoryEntry,
+  clearSharedMemory,
+  updateMemoryEntry,
+  supersedeMemoryEntry,
+  markMemorySuperseded,
+  archiveMemoryEntry,
+  deleteMemoryEntry,
+  pruneExpiredMemories,
+  effectiveStatementType,
+  effectiveLifecycle,
+  MAX_ENTRIES,
+  MAX_ARCHIVE_ENTRIES,
+} from './memory-store.ts'
+export type {
+  MemoryEntry,
+  StatementType,
+  LifecycleState,
+  MemorySource,
+  MemoryAuth,
+  MemoryVerify,
+  MemoryLifecycle,
+} from './memory-store.ts'

@@ -5,7 +5,8 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { loadSharedMemory, clearSharedMemory, addMemoryEntry, updateMemoryEntry, deleteMemoryEntry, pruneExpiredMemories } from './memory-store.ts'
+import { loadSharedMemory, loadArchivedMemories, clearSharedMemory, addMemoryEntry, updateMemoryEntry, deleteMemoryEntry, archiveMemoryEntry, pruneExpiredMemories, STATEMENT_TYPES, effectiveStatementType } from './memory-store.ts'
+import type { MemorySource, MemoryAuth, MemoryVerify, StatementType } from './memory-store.ts'
 import { serveAdminPage } from './memory-admin-page.ts'
 
 /** 读取请求体 JSON */
@@ -87,18 +88,34 @@ export function registerMemoryApi(web: {
           return
         }
         try {
-          const body = await readJsonBody(req as IncomingMessage) as { content?: string; type?: string; scope?: string; participants?: string[] }
+          const body = await readJsonBody(req as IncomingMessage) as {
+            content?: string; type?: string; scope?: string; participants?: string[]
+            statementType?: string; source?: Partial<MemorySource>; auth?: Partial<MemoryAuth>; verify?: Partial<MemoryVerify>
+          }
           if (typeof body.content !== 'string' || !body.content.trim()) {
             respondJson(res as ServerResponse, 400, { ok: false, error: '需要 content' })
             return
           }
           const participants = Array.isArray(body.participants) ? body.participants.filter((p): p is string => typeof p === 'string') : undefined
+          // 管理页写入=主人代笔：默认 事实 + api 归因
+          const statementType = typeof body.statementType === 'string' && (STATEMENT_TYPES as readonly string[]).includes(body.statementType)
+            ? body.statementType as StatementType
+            : '事实'
+          const source: MemorySource = {
+            origin: (typeof body.source?.origin === 'string' ? body.source.origin : 'api') as MemorySource['origin'],
+            ...(typeof body.source?.ref === 'string' ? { ref: body.source.ref } : {}),
+            ...(body.source?.hubEndorsed === true ? { hubEndorsed: true } : {}),
+          }
           const entry = await addMemoryEntry({
             content: body.content.trim(),
             type: typeof body.type === 'string' ? body.type : 'note',
             scope: (body.scope === 'master' || body.scope === 'self' || body.scope === 'public') ? body.scope : 'master',
             author: 'admin',
             authorRole: 'master',
+            statementType,
+            source,
+            ...(body.auth !== undefined ? { auth: body.auth as MemoryAuth } : {}),
+            ...(body.verify !== undefined ? { verify: body.verify as MemoryVerify } : {}),
             ...(participants !== undefined ? { participants } : {}),
           })
           if (entry === null) {
@@ -148,24 +165,37 @@ export function registerMemoryApi(web: {
         return
       }
       try {
-        const body = await readJsonBody(req as IncomingMessage) as { id?: string; content?: string; scope?: string; participants?: string[] }
+        const body = await readJsonBody(req as IncomingMessage) as {
+          id?: string; content?: string; scope?: string; participants?: string[]; statementType?: string
+        }
         if (typeof body.id !== 'string' || !body.id) {
           respondJson(res as ServerResponse, 400, { ok: false, error: '需要 id' })
           return
         }
-        const updates: { content?: string; scope?: 'master' | 'self' | 'public'; participants?: string[] } = {}
+        const updates: Parameters<typeof updateMemoryEntry>[1] = {}
         if (typeof body.content === 'string') updates.content = body.content
+        if (typeof body.statementType === 'string' && (STATEMENT_TYPES as readonly string[]).includes(body.statementType)) {
+          updates.statementType = body.statementType as StatementType
+        }
         if (typeof body.scope === 'string' && ['master', 'self', 'public'].includes(body.scope)) {
           updates.scope = body.scope as 'master' | 'self' | 'public'
         }
         if (Array.isArray(body.participants)) {
           updates.participants = body.participants.filter((p): p is string => typeof p === 'string')
         }
-        const result = await updateMemoryEntry(body.id, updates)
+        // 管理页修订者记为 admin/master；陈述类变更走替代链
+        const result = await updateMemoryEntry(body.id, updates, { author: 'admin', authorRole: 'master' })
         if (result === null) {
           respondJson(res as ServerResponse, 404, { ok: false, error: '未找到该记忆' })
         } else {
-          respondJson(res as ServerResponse, 200, { ok: true, entry: result })
+          const superseded = result.lifecycle?.supersedes
+          respondJson(res as ServerResponse, 200, {
+            ok: true,
+            entry: result,
+            mode: superseded !== undefined ? '替代（历史保留）' : '原地',
+            ...(superseded !== undefined ? { superseded } : {}),
+            statementType: effectiveStatementType(result),
+          })
         }
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
@@ -189,6 +219,43 @@ export function registerMemoryApi(web: {
           return
         }
         const ok = await deleteMemoryEntry(body.id)
+        respondJson(res as ServerResponse, ok ? 200 : 404, { ok })
+      } catch (error) {
+        respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
+      }
+    },
+  })
+
+  // GET /dsh-memory/archive - 归档区列表（管理页为主人视图，不做按用户过滤）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-memory/archive',
+    handler: (_req: unknown, res: unknown) => {
+      try {
+        const entries = loadArchivedMemories()
+        respondJson(res as ServerResponse, 200, { ok: true, entries, total: entries.length })
+      } catch (error) {
+        respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
+      }
+    },
+  })
+
+  // POST /dsh-memory/entries/archive - 手动归档一条活跃记忆（不删除，可查回）
+  web.register({
+    kind: 'exact',
+    path: '/dsh-memory/entries/archive',
+    handler: async (req: unknown, res: unknown) => {
+      if (!hasAdminToken(req as IncomingMessage, adminToken)) {
+        unauthorized(res as ServerResponse)
+        return
+      }
+      try {
+        const body = await readJsonBody(req as IncomingMessage) as { id?: string }
+        if (typeof body.id !== 'string' || !body.id) {
+          respondJson(res as ServerResponse, 400, { ok: false, error: '需要 id' })
+          return
+        }
+        const ok = await archiveMemoryEntry(body.id)
         respondJson(res as ServerResponse, ok ? 200 : 404, { ok })
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
