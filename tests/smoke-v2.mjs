@@ -5,7 +5,7 @@ import {
   loadSharedMemory, loadArchivedMemories,
   filterMemoriesForRead, effectiveStatementType, effectiveLifecycle,
   MAX_ENTRIES,
-} from 'file:///D:/development/Coder/nodejs/dsh/dsh-memory/lib/memory-store.js'
+} from '../lib/memory-store.js'
 
 let failed = 0
 function check(name, cond, extra = '') {

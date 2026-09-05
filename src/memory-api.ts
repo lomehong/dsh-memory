@@ -57,8 +57,31 @@ export function registerMemoryApi(web: {
   // 待 DSH webServer 未来在请求上携带会话身份后，应升级为真正的用户级鉴权。
   const adminToken = randomBytes(16).toString('hex')
 
+  // 同源门禁（安全加固）：带 Origin 且与 Host 不一致的跨源请求一律 403——
+  // 覆盖 token 下发与全部读写路由；无 Origin（同源导航/宿主内调用）放行。
+  const sameOrigin = (req: IncomingMessage): boolean => {
+    const origin = req.headers.origin
+    if (origin === undefined) return true
+    const host = req.headers.host
+    if (typeof host !== 'string') return false
+    try { return new URL(String(origin)).host === host } catch { return false }
+  }
+  const register = (route: { kind: string; path: string; handler: (req: unknown, res: unknown) => void | Promise<void> }): void => {
+    register({
+      kind: route.kind,
+      path: route.path,
+      handler: (req: unknown, res: unknown) => {
+        if (!sameOrigin(req as IncomingMessage)) {
+          respondJson(res as ServerResponse, 403, { ok: false, error: 'cross-origin denied' })
+          return
+        }
+        void route.handler(req, res)
+      },
+    })
+  }
+
   // GET /dsh-memory - 管理页面
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory',
     handler: (_req: unknown, res: unknown) => {
@@ -67,7 +90,7 @@ export function registerMemoryApi(web: {
   })
 
   // GET /dsh-memory/token - 下发写操作校验 token（供对话 Tab 等内置客户端使用）
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/token',
     handler: (_req: unknown, res: unknown) => {
@@ -78,7 +101,7 @@ export function registerMemoryApi(web: {
   // /dsh-memory/entries - 单一路由按方法分发（GET 列表 / POST 新增）。
   // 修复：同 path 用 kind:'exact' 注册两次会让 webServer 冲突、导致清除/更新/删除/清理等后续路由全部注册失败。
   // 注意：当前 DSH webServer 未在请求上附带用户身份，此处返回全部条目；待身份可用后应做按身份的权限过滤。
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/entries',
     handler: async (req: unknown, res: unknown) => {
@@ -138,7 +161,7 @@ export function registerMemoryApi(web: {
   })
 
   // POST /dsh-memory/clear - 清除所有记忆
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/clear',
     handler: async (_req: unknown, res: unknown) => {
@@ -156,7 +179,7 @@ export function registerMemoryApi(web: {
   })
 
   // POST /dsh-memory/entries/update - 更新一条记忆
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/entries/update',
     handler: async (req: unknown, res: unknown) => {
@@ -204,7 +227,7 @@ export function registerMemoryApi(web: {
   })
 
   // POST /dsh-memory/entries/delete - 删除一条记忆
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/entries/delete',
     handler: async (req: unknown, res: unknown) => {
@@ -227,7 +250,7 @@ export function registerMemoryApi(web: {
   })
 
   // GET /dsh-memory/archive - 归档区列表（管理页为主人视图，不做按用户过滤）
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/archive',
     handler: (_req: unknown, res: unknown) => {
@@ -241,7 +264,7 @@ export function registerMemoryApi(web: {
   })
 
   // POST /dsh-memory/entries/archive - 手动归档一条活跃记忆（不删除，可查回）
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/entries/archive',
     handler: async (req: unknown, res: unknown) => {
@@ -264,7 +287,7 @@ export function registerMemoryApi(web: {
   })
 
   // POST /dsh-memory/prune - 清除过期记忆
-  web.register({
+  register({
     kind: 'exact',
     path: '/dsh-memory/prune',
     handler: async (_req: unknown, res: unknown) => {

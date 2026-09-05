@@ -5,11 +5,11 @@ import {
   addMemoryEntry, addRelationEntry, updateMemorySupport, closeOpenLoop, openLoopsForActor,
   loadSharedMemory, filterMemoriesByUser, effectiveSupport, effectiveStatementType,
   clearSharedMemory,
-} from 'file:///D:/development/Coder/nodejs/dsh/dsh-memory/lib/memory-store.js'
+} from '../lib/memory-store.js'
 import { fileURLToPath } from 'node:url'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
-const { assembleMemoryPack: assemble, loadReceipt } = await import('file:///D:/development/Coder/nodejs/dsh/dsh-memory/lib/memory-assemble.js')
+const { assembleMemoryPack: assemble, loadReceipt } = await import('../lib/memory-assemble.js')
 
 let failed = 0
 function check(name, cond, extra = '') {
