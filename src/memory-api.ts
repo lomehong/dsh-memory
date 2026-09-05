@@ -67,7 +67,9 @@ export function registerMemoryApi(web: {
     try { return new URL(String(origin)).host === host } catch { return false }
   }
   const register = (route: { kind: string; path: string; handler: (req: unknown, res: unknown) => void | Promise<void> }): void => {
-    register({
+    // 修复（自递归事故）：此处必须调用宿主的 web.register——曾经写成 register(自身)
+    // 导致无限递归、首条路由注册即栈溢出（被上层吞掉），/dsh-memory/* 全部 404。
+    web.register({
       kind: route.kind,
       path: route.path,
       handler: (req: unknown, res: unknown) => {
