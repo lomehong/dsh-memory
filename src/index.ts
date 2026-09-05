@@ -30,6 +30,7 @@ import {
   effectiveLifecycle,
 } from './memory-store.ts'
 import type { MemoryEntry, StatementType, LifecycleState, MemorySource, MemoryAuth, MemoryVerify, MemoryLifecycle } from './memory-store.ts'
+import { assembleMemoryPack } from './memory-assemble.ts'
 
 export const name = 'dsh-memory'
 // webServer 不是硬依赖：核心功能（provide 服务 + 工具注册）不需要 webServer，
@@ -59,6 +60,19 @@ export function apply(ctx: Context): void {
     pruneExpiredMemories,
     effectiveStatementType,
     effectiveLifecycle,
+    // 按回合记忆装配（可选增强，宪章第三阶段）：依消息文本检索相关记忆，
+    // 生成带审计回执的记忆包文本。im-channel 开关开启时逐回合调用；
+    // 装配失败返回空文本，绝不阻断消息派发。
+    assemblePack: (userId: string, isMaster: boolean, query: string): { text: string } => {
+      try {
+        const result = assembleMemoryPack({ userId, isMaster }, { keywords: [query.trim()].filter(Boolean), limit: 8 })
+        if (result.pack.length === 0) return { text: '' }
+        const lines = result.pack.map(e => `• [${effectiveStatementType(e)}] ${e.content}`)
+        return { text: `【相关共享记忆（自动装配，仅供参考）】\n${lines.join('\n')}` }
+      } catch {
+        return { text: '' }
+      }
+    },
   }
   ;(ctx as unknown as { provide: (name: string, value: unknown) => void }).provide('dsh-memory', memoryService)
 
