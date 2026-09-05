@@ -8,10 +8,12 @@
  *
  * 所有读-改-写操作（新增/更新/删除/清除/归档/清理过期）都在文件锁内完成整个事务，
  * 避免并发写入覆盖或丢失更新；写入先写临时文件再原子重命名，防止中断损坏。
- * 存储位置：~/.dsh/im-channel/credentials/shared-memory.json（活跃）
- *           ~/.dsh/im-channel/credentials/shared-memory-archive.json（归档）
+ * 存储位置：$DSH_HOME/dsh-memory/shared-memory.json（活跃）
+ *           $DSH_HOME/dsh-memory/shared-memory-archive.json（归档）
+ * 历史注记：v2.1 前存储位于 ~/.dsh/im-channel/credentials/（机器级、误挂渠道目录），
+ * 首次读取时自动迁移到实例级目录；旧文件保留不删，作为迁移前备份。
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -143,12 +145,47 @@ const LOCK_RETRY_MS = 50
 /** 锁陈旧阈值：锁文件存在超过该时长视为持有者已崩溃，可接管 */
 const LOCK_STALE_MS = 15000
 
+/** 实例家：DSH_HOME 优先，回退 ~/.dsh（与套件其他插件同一约定） */
+function dshHome(): string {
+  return process.env.DSH_HOME ?? join(homedir(), '.dsh')
+}
+
 function memoryPath(): string {
-  return join(homedir(), '.dsh', 'im-channel', 'credentials', 'shared-memory.json')
+  return join(dshHome(), 'dsh-memory', 'shared-memory.json')
 }
 
 function archivePath(): string {
+  return join(dshHome(), 'dsh-memory', 'shared-memory-archive.json')
+}
+
+/** v2.1 前的机器级旧路径（误挂 im-channel 渠道目录，无视 DSH_HOME） */
+function legacyMemoryPath(): string {
+  return join(homedir(), '.dsh', 'im-channel', 'credentials', 'shared-memory.json')
+}
+
+function legacyArchivePath(): string {
   return join(homedir(), '.dsh', 'im-channel', 'credentials', 'shared-memory-archive.json')
+}
+
+/**
+ * 一次性迁移：新位置缺文件而旧位置有 → 复制到实例级目录。
+ * 旧文件保留不删（迁移前备份）；幂等，首次读取前调用。
+ */
+function migrateLegacyStore(): void {
+  const pairs: Array<[string, string]> = [
+    [legacyMemoryPath(), memoryPath()],
+    [legacyArchivePath(), archivePath()],
+  ]
+  for (const [from, to] of pairs) {
+    if (existsSync(to) || !existsSync(from)) continue
+    try {
+      mkdirSync(dirname(to), { recursive: true })
+      copyFileSync(from, to)
+    } catch {
+      // 迁移失败不阻断：新位置不存在时 loadSharedMemory 返回空，
+      // 旧文件仍在原处可人工恢复。
+    }
+  }
 }
 
 function lockPath(): string {
@@ -222,6 +259,7 @@ async function withLock<T>(fn: () => T): Promise<LockedResult<T>> {
 
 /** 加载活跃记忆 */
 export function loadSharedMemory(): MemoryEntry[] {
+  migrateLegacyStore()
   const path = memoryPath()
   if (!existsSync(path)) return []
   try {
@@ -241,6 +279,7 @@ export function loadSharedMemory(): MemoryEntry[] {
 
 /** 加载归档记忆（不删除的「第二历史」） */
 export function loadArchivedMemories(): MemoryEntry[] {
+  migrateLegacyStore()
   const path = archivePath()
   if (!existsSync(path)) return []
   try {
