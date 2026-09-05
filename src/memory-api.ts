@@ -49,10 +49,10 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 注册共享记忆 API 路由 */
+/** 注册共享记忆 API 路由；返回写门禁 token（供同插件其他 HTTP 面复用同一门禁）。 */
 export function registerMemoryApi(web: {
   register: (route: { kind: string; path: string; handler: (req: unknown, res: unknown) => void }) => void
-}): void {
+}): { token: string } {
   // 写操作统一由启动时随机生成的 token 门禁：外部扫描器/跨站请求无法携带该自定义头。
   // 待 DSH webServer 未来在请求上携带会话身份后，应升级为真正的用户级鉴权。
   const adminToken = randomBytes(16).toString('hex')
@@ -305,4 +305,6 @@ export function registerMemoryApi(web: {
       }
     },
   })
+
+  return { token: adminToken }
 }

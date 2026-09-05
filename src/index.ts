@@ -78,8 +78,14 @@ export function apply(ctx: Context): void {
 
   // 过期记忆自动清理：插件加载时清理一次，之后定期清理，
   // 避免过期条目长期占用 MAX_ENTRIES 配额并计入摘要。
-  void pruneExpiredMemories()
-  const pruneTimer = setInterval(() => { void pruneExpiredMemories() }, 10 * 60 * 1000)
+  void pruneExpiredMemories().catch((error: unknown) => {
+    ctx.logger?.warn?.('[dsh-memory] 过期记忆清理失败（下个周期重试）:', error instanceof Error ? error.message : String(error))
+  })
+  const pruneTimer = setInterval(() => {
+    void pruneExpiredMemories().catch((error: unknown) => {
+      ctx.logger?.warn?.('[dsh-memory] 过期记忆清理失败（下个周期重试）:', error instanceof Error ? error.message : String(error))
+    })
+  }, 10 * 60 * 1000)
   pruneTimer.unref?.()
   const maybeLifecycle = ctx as unknown as { on?: (event: 'dispose', fn: () => void) => void }
   maybeLifecycle.on?.('dispose', () => clearInterval(pruneTimer))
@@ -89,8 +95,8 @@ export function apply(ctx: Context): void {
     const web = wctx.get('webServer') as unknown as {
       register: (route: { kind: string; path: string; handler: (req: unknown, res: unknown) => void }) => void
     }
-    registerMemoryApi(web)
-    registerAssembleApi(web)
+    const { token } = registerMemoryApi(web)
+    registerAssembleApi(web, token)
     ctx.logger?.info?.('[dsh-memory] API 路由已注册（含 v2.1 assemble/回执）')
   })
 }

@@ -66,11 +66,13 @@ export declare function saveReceipt(receipt: AssemblyReceipt): void;
 export declare function cleanupReceipts(keepDays: number): number;
 /** 读取一份回执（审计/调查用） */
 export declare function loadReceipt(turnId: string): AssemblyReceipt | null;
-/** 注册 HTTP 路由（POST /dsh-memory/assemble；写路由 sameOrigin）。路由随 webServer 存活，无需单独 disposer */
+/** 注册 HTTP 路由（POST /dsh-memory/assemble；安全审计 H2：本端点按 token 门禁——
+ *  它返回主任可见的记忆包，绝不能信任请求体自报的 isMaster；进程内消费方走服务面
+ *  assemblePack，不经此路由）。路由随 webServer 存活，无需单独 disposer */
 export declare function registerAssembleApi(web: {
     register: (route: {
         kind: string;
         path: string;
         handler: (req: unknown, res: unknown) => void;
     }) => void;
-}): void;
+}, adminToken: string): void;
