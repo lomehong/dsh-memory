@@ -2,6 +2,9 @@
  * 共享记忆视图 - 对话区域的第三个 Tab
  *
  * 提供记忆管理界面，与 admin page 功能相同但作为 React 组件嵌入。
+ * 样式走产品语义令牌（--dsw-alias-*），深浅主题自动适配；
+ * 通过组件内注入一段样式表获得 hover/focus 等伪类能力
+ * （构建链是 esbuild 无 CSS 管线，内联样式表达不了伪类）。
  */
 import { useState, useEffect, useCallback } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client/contract/slots'
@@ -19,8 +22,6 @@ interface MemoryEntry {
 }
 
 const SCOPE_LABELS: Record<string, string> = { master: '仅主人', self: '当事人', public: '公开' }
-const SCOPE_COLORS: Record<string, string> = { master: '#fff3cd', self: '#d4edda', public: '#cce5ff' }
-const SCOPE_TEXT: Record<string, string> = { master: '#856404', self: '#155724', public: '#004085' }
 
 async function api(path: string, method = 'GET', body?: unknown, token?: string): Promise<Record<string, unknown>> {
   const headers: Record<string, string> = { Accept: 'application/json' }
@@ -34,6 +35,53 @@ async function api(path: string, method = 'GET', body?: unknown, token?: string)
   const res = await fetch(path, opts)
   return res.json() as Promise<Record<string, unknown>>
 }
+
+/* * 组件样式表：全部走 --dsw-alias-* 语义令牌，深浅主题自适应。 */
+const CSS = `
+.dsh-mem-root { padding: 16px 20px 20px; height: 100%; display: flex; flex-direction: column; gap: 12px; color: var(--dsw-alias-label-primary); }
+.dsh-mem-stats { display: flex; gap: 12px; }
+.dsh-mem-stat { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-2); }
+.dsh-mem-statNum { font-size: 22px; font-weight: 700; line-height: 1.2; color: var(--dsw-alias-label-primary); }
+.dsh-mem-statNum[data-accent='brand'] { color: var(--dsw-alias-brand-primary, var(--dsw-alias-label-primary)); }
+.dsh-mem-statNum[data-accent='warn'] { color: var(--dsw-alias-state-warn-primary); }
+.dsh-mem-statLabel { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); }
+.dsh-mem-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dsh-mem-input, .dsh-mem-select { padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; font-size: 13px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); transition: border-color .12s ease; outline: none; }
+.dsh-mem-input { flex: 1; min-width: 160px; }
+.dsh-mem-input::placeholder { color: var(--dsw-alias-label-tertiary); }
+.dsh-mem-input:focus, .dsh-mem-select:focus, .dsh-mem-modalInput:focus, .dsh-mem-modalTextarea:focus, .dsh-mem-modalSelect:focus { border-color: var(--dsw-alias-brand-primary, var(--dsw-alias-border-l2)); }
+.dsh-mem-select option { background: var(--dsw-alias-bg-base, #1b1b1b); color: var(--dsw-alias-label-primary); }
+.dsh-mem-btn { padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; font-size: 13px; line-height: 1.5; cursor: pointer; background: transparent; color: var(--dsw-alias-label-secondary); transition: background .12s ease, border-color .12s ease, color .12s ease; }
+.dsh-mem-btn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dsh-mem-btnSmall { padding: 3px 10px; font-size: 11px; border-radius: 6px; }
+/* 主动作按钮走 button-info-*（DeepSeek 蓝，深浅主题各有一档）——
+   与产品输入区的蓝色发送键同一视觉族；不要用 button-primary-fill，
+   深色模式下它是反色白底，需配 brand-primary-invert 深色标签。 */
+.dsh-mem-btnPrimary { background: var(--dsw-alias-button-info-fill, #4a6cf7); border-color: transparent; color: #fff; }
+.dsh-mem-btnPrimary:hover { background: var(--dsw-alias-button-info-hover, #5a7cff); color: #fff; }
+.dsh-mem-btnDanger { color: var(--dsw-alias-state-error-primary); }
+.dsh-mem-btnDanger:hover { border-color: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
+.dsh-mem-scroll { flex: 1; overflow: auto; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
+.dsh-mem-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dsh-mem-th { padding: 9px 12px; text-align: left; font-weight: 600; font-size: 12px; color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-bg-layer-3); border-bottom: 1px solid var(--dsw-alias-border-l2); position: sticky; top: 0; }
+.dsh-mem-td { padding: 8px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); font-size: 13px; line-height: 1.5; }
+.dsh-mem-tbody tr:hover .dsh-mem-td { background: var(--dsw-alias-interactive-bg-hover); }
+.dsh-mem-trExpired .dsh-mem-td { opacity: 0.45; }
+.dsh-mem-content { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-mem-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; line-height: 18px; border: 1px solid transparent; }
+.dsh-mem-badgeNeutral { background: var(--dsw-alias-bg-layer-3); border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); }
+.dsh-mem-badge[data-scope='master'] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 40%, transparent); color: var(--dsw-alias-state-warn-primary); }
+.dsh-mem-badge[data-scope='self'] { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary) 40%, transparent); color: var(--dsw-alias-state-success-primary); }
+.dsh-mem-badge[data-scope='public'] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); color: var(--dsw-alias-brand-primary, var(--dsw-alias-label-secondary)); }
+.dsh-mem-empty { padding: 48px 24px; text-align: center; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.dsh-mem-overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 52%); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.dsh-mem-modal { background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; padding: 20px; min-width: 360px; max-width: 480px; box-shadow: 0 12px 36px rgb(0 0 0 / 36%); color: var(--dsw-alias-label-primary); }
+.dsh-mem-modalTitle { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+.dsh-mem-modalLabel { display: block; margin-bottom: 4px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.dsh-mem-modalInput, .dsh-mem-modalTextarea, .dsh-mem-modalSelect { width: 100%; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; font-size: 13px; margin-bottom: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-sizing: border-box; outline: none; transition: border-color .12s ease; font-family: inherit; }
+.dsh-mem-modalTextarea { min-height: 64px; resize: vertical; }
+.dsh-mem-btnRow { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+`
 
 export function MemoryView(_props: ConvViewProps): JSX.Element {
   const [entries, setEntries] = useState<MemoryEntry[]>([])
@@ -114,94 +162,65 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
     setEditParticipants((e.participants || []).join(', '))
   }
 
-  const styles: Record<string, React.CSSProperties> = {
-    container: { padding: '16px', height: '100%', display: 'flex', flexDirection: 'column' },
-    toolbar: { display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center', flexWrap: 'wrap' },
-    input: { flex: 1, minWidth: '150px', padding: '6px 10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' },
-    select: { padding: '6px 10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px' },
-    btn: { padding: '6px 12px', border: 'none', borderRadius: '4px', fontSize: '13px', cursor: 'pointer' },
-    btnPrimary: { background: '#4a6cf7', color: '#fff' },
-    btnDanger: { background: '#e74c3c', color: '#fff' },
-    btnSmall: { padding: '3px 8px', fontSize: '11px' },
-    table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
-    th: { padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #eee', background: '#fafafa', fontWeight: 600, color: '#666', fontSize: '12px' },
-    td: { padding: '8px 10px', borderBottom: '1px solid #eee', fontSize: '13px' },
-    content: { maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-    badge: { display: 'inline-block', padding: '2px 6px', borderRadius: '8px', fontSize: '11px', fontWeight: 600 },
-    modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    modal: { background: '#fff', borderRadius: '8px', padding: '20px', minWidth: '350px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' },
-    modalLabel: { display: 'block', marginBottom: '4px', fontSize: '12px', color: '#666' },
-    modalInput: { width: '100%', padding: '6px 10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px', marginBottom: '10px', boxSizing: 'border-box' },
-    modalTextarea: { width: '100%', padding: '6px 10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px', marginBottom: '10px', minHeight: '60px', resize: 'vertical', boxSizing: 'border-box' },
-    modalSelect: { width: '100%', padding: '6px 10px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '13px', marginBottom: '10px', boxSizing: 'border-box' },
-    btnRow: { display: 'flex', gap: '8px', justifyContent: 'flex-end' },
-    expired: { opacity: 0.5 },
-    stats: { display: 'flex', gap: '12px', marginBottom: '12px' },
-    statCard: { background: '#fff', borderRadius: '6px', padding: '10px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', flex: 1 },
-    statNum: { fontSize: '22px', fontWeight: 700, color: '#4a6cf7' },
-    statLabel: { fontSize: '12px', color: '#666', marginTop: '2px' },
-    scrollContainer: { flex: 1, overflow: 'auto' },
-  }
-
   return (
-    <div style={styles.container}>
-      <div style={styles.stats}>
-        <div style={styles.statCard}>
-          <div style={styles.statNum}>{entries.length}</div>
-          <div style={styles.statLabel}>总记忆</div>
+    <div className="dsh-mem-root">
+      <style>{CSS}</style>
+
+      <div className="dsh-mem-stats">
+        <div className="dsh-mem-stat">
+          <div className="dsh-mem-statNum">{entries.length}</div>
+          <div className="dsh-mem-statLabel">总记忆</div>
         </div>
-        <div style={styles.statCard}>
-          <div style={styles.statNum}>{filtered.length}</div>
-          <div style={styles.statLabel}>筛选后</div>
+        <div className="dsh-mem-stat">
+          <div className="dsh-mem-statNum" data-accent={scopeFilter || search ? 'brand' : undefined}>{filtered.length}</div>
+          <div className="dsh-mem-statLabel">筛选后</div>
         </div>
-        <div style={styles.statCard}>
-          <div style={styles.statNum}>{expiredCount}</div>
-          <div style={styles.statLabel}>已过期</div>
+        <div className="dsh-mem-stat">
+          <div className="dsh-mem-statNum" data-accent={expiredCount > 0 ? 'warn' : undefined}>{expiredCount}</div>
+          <div className="dsh-mem-statLabel">已过期</div>
         </div>
       </div>
 
-      <div style={styles.toolbar}>
-        <input style={styles.input} placeholder="搜索记忆..." value={search} onChange={e => setSearch(e.target.value)} />
-        <select style={styles.select} value={scopeFilter} onChange={e => setScopeFilter(e.target.value)}>
+      <div className="dsh-mem-toolbar">
+        <input className="dsh-mem-input" placeholder="搜索记忆..." value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="dsh-mem-select" value={scopeFilter} onChange={e => setScopeFilter(e.target.value)}>
           <option value="">所有范围</option>
           <option value="master">仅主人</option>
           <option value="self">当事人</option>
           <option value="public">公开</option>
         </select>
-        <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={() => setShowAdd(true)}>+ 添加</button>
-        <button style={{ ...styles.btn, ...styles.btnDanger, ...styles.btnSmall }} onClick={handleClear}>清除全部</button>
-        <button style={{ ...styles.btn, ...styles.btnSmall }} onClick={handlePrune}>清除过期</button>
+        <button className="dsh-mem-btn dsh-mem-btnPrimary" onClick={() => setShowAdd(true)}>+ 添加</button>
+        <button className="dsh-mem-btn dsh-mem-btnDanger dsh-mem-btnSmall" onClick={handleClear}>清除全部</button>
+        <button className="dsh-mem-btn dsh-mem-btnSmall" onClick={handlePrune}>清除过期</button>
       </div>
 
-      <div style={styles.scrollContainer}>
-        <table style={styles.table}>
+      <div className="dsh-mem-scroll">
+        <table className="dsh-mem-table">
           <thead>
             <tr>
-              <th style={styles.th}>时间</th>
-              <th style={styles.th}>类型</th>
-              <th style={styles.th}>内容</th>
-              <th style={styles.th}>范围</th>
-              <th style={styles.th}>作者</th>
-              <th style={styles.th}>操作</th>
+              <th className="dsh-mem-th">时间</th>
+              <th className="dsh-mem-th">类型</th>
+              <th className="dsh-mem-th">内容</th>
+              <th className="dsh-mem-th">范围</th>
+              <th className="dsh-mem-th">作者</th>
+              <th className="dsh-mem-th">操作</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="dsh-mem-tbody">
             {filtered.length === 0 ? (
-              <tr><td colSpan={6} style={{ ...styles.td, textAlign: 'center', color: '#999', padding: '40px' }}>暂无记忆</td></tr>
+              <tr><td className="dsh-mem-td" colSpan={6}><div className="dsh-mem-empty">暂无记忆</div></td></tr>
             ) : filtered.map(e => {
               const expired = e.expireAt && e.expireAt < now
-              const scopeColor = SCOPE_COLORS[e.scope] || '#e8e8e8'
-              const scopeText = SCOPE_TEXT[e.scope] || '#555'
               return (
-                <tr key={e.id} style={expired ? styles.expired : undefined}>
-                  <td style={styles.td}>{(e.timestamp || '').slice(0, 19).replace('T', ' ')}</td>
-                  <td style={styles.td}><span style={{ ...styles.badge, background: '#e8e8e8', color: '#555' }}>{e.type}</span></td>
-                  <td style={{ ...styles.td, ...styles.content }} title={e.content}>{e.content}</td>
-                  <td style={styles.td}><span style={{ ...styles.badge, background: scopeColor, color: scopeText }}>{SCOPE_LABELS[e.scope] || e.scope}</span></td>
-                  <td style={styles.td}>{e.authorRole === 'master' ? '主人' : e.author}</td>
-                  <td style={styles.td}>
-                    <button style={{ ...styles.btn, ...styles.btnPrimary, ...styles.btnSmall, marginRight: '4px' }} onClick={() => openEdit(e)}>编辑</button>
-                    <button style={{ ...styles.btn, ...styles.btnDanger, ...styles.btnSmall }} onClick={() => handleDelete(e.id)}>删除</button>
+                <tr key={e.id} className={expired ? 'dsh-mem-trExpired' : undefined}>
+                  <td className="dsh-mem-td">{(e.timestamp || '').slice(0, 19).replace('T', ' ')}</td>
+                  <td className="dsh-mem-td"><span className="dsh-mem-badge dsh-mem-badgeNeutral">{e.type}</span></td>
+                  <td className="dsh-mem-td dsh-mem-content" title={e.content}>{e.content}</td>
+                  <td className="dsh-mem-td"><span className="dsh-mem-badge" data-scope={e.scope}>{SCOPE_LABELS[e.scope] || e.scope}</span></td>
+                  <td className="dsh-mem-td">{e.authorRole === 'master' ? '主人' : e.author}</td>
+                  <td className="dsh-mem-td">
+                    <button className="dsh-mem-btn dsh-mem-btnSmall" style={{ marginRight: '4px' }} onClick={() => openEdit(e)}>编辑</button>
+                    <button className="dsh-mem-btn dsh-mem-btnDanger dsh-mem-btnSmall" onClick={() => handleDelete(e.id)}>删除</button>
                   </td>
                 </tr>
               )
@@ -212,30 +231,30 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
 
       {/* 添加记忆弹窗 */}
       {showAdd && (
-        <div style={styles.modalOverlay} onClick={() => setShowAdd(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>添加记忆</h3>
-            <label style={styles.modalLabel}>内容</label>
-            <textarea style={styles.modalTextarea} value={addContent} onChange={e => setAddContent(e.target.value)} placeholder="记忆内容" />
-            <label style={styles.modalLabel}>类型</label>
-            <select style={styles.modalSelect} value={addType} onChange={e => setAddType(e.target.value)}>
+        <div className="dsh-mem-overlay" onClick={() => setShowAdd(false)}>
+          <div className="dsh-mem-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="dsh-mem-modalTitle">添加记忆</h3>
+            <label className="dsh-mem-modalLabel">内容</label>
+            <textarea className="dsh-mem-modalTextarea" value={addContent} onChange={e => setAddContent(e.target.value)} placeholder="记忆内容" />
+            <label className="dsh-mem-modalLabel">类型</label>
+            <select className="dsh-mem-modalSelect" value={addType} onChange={e => setAddType(e.target.value)}>
               <option value="note">笔记</option>
               <option value="schedule_created">日程</option>
               <option value="todo_created">待办</option>
               <option value="decision">决策</option>
               <option value="conversation_summary">对话摘要</option>
             </select>
-            <label style={styles.modalLabel}>可见范围</label>
-            <select style={styles.modalSelect} value={addScope} onChange={e => setAddScope(e.target.value)}>
+            <label className="dsh-mem-modalLabel">可见范围</label>
+            <select className="dsh-mem-modalSelect" value={addScope} onChange={e => setAddScope(e.target.value)}>
               <option value="master">仅主人可见</option>
               <option value="self">主人+当事人</option>
               <option value="public">所有人可见</option>
             </select>
-            <label style={styles.modalLabel}>参与者 userid（逗号分隔）</label>
-            <input style={styles.modalInput} value={addParticipants} onChange={e => setAddParticipants(e.target.value)} placeholder="userid1, userid2" />
-            <div style={styles.btnRow}>
-              <button style={{ ...styles.btn }} onClick={() => setShowAdd(false)}>取消</button>
-              <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={handleAdd}>添加</button>
+            <label className="dsh-mem-modalLabel">参与者 userid（逗号分隔）</label>
+            <input className="dsh-mem-modalInput" value={addParticipants} onChange={e => setAddParticipants(e.target.value)} placeholder="userid1, userid2" />
+            <div className="dsh-mem-btnRow">
+              <button className="dsh-mem-btn" onClick={() => setShowAdd(false)}>取消</button>
+              <button className="dsh-mem-btn dsh-mem-btnPrimary" onClick={handleAdd}>添加</button>
             </div>
           </div>
         </div>
@@ -243,22 +262,22 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
 
       {/* 编辑记忆弹窗 */}
       {editId !== null && (
-        <div style={styles.modalOverlay} onClick={() => setEditId(null)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '16px' }}>编辑记忆</h3>
-            <label style={styles.modalLabel}>内容</label>
-            <textarea style={styles.modalTextarea} value={editContent} onChange={e => setEditContent(e.target.value)} />
-            <label style={styles.modalLabel}>可见范围</label>
-            <select style={styles.modalSelect} value={editScope} onChange={e => setEditScope(e.target.value)}>
+        <div className="dsh-mem-overlay" onClick={() => setEditId(null)}>
+          <div className="dsh-mem-modal" onClick={e => e.stopPropagation()}>
+            <h3 className="dsh-mem-modalTitle">编辑记忆</h3>
+            <label className="dsh-mem-modalLabel">内容</label>
+            <textarea className="dsh-mem-modalTextarea" value={editContent} onChange={e => setEditContent(e.target.value)} />
+            <label className="dsh-mem-modalLabel">可见范围</label>
+            <select className="dsh-mem-modalSelect" value={editScope} onChange={e => setEditScope(e.target.value)}>
               <option value="master">仅主人可见</option>
               <option value="self">主人+当事人</option>
               <option value="public">所有人可见</option>
             </select>
-            <label style={styles.modalLabel}>参与者 userid（逗号分隔）</label>
-            <input style={styles.modalInput} value={editParticipants} onChange={e => setEditParticipants(e.target.value)} placeholder="userid1, userid2" />
-            <div style={styles.btnRow}>
-              <button style={{ ...styles.btn }} onClick={() => setEditId(null)}>取消</button>
-              <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={handleEdit}>保存</button>
+            <label className="dsh-mem-modalLabel">参与者 userid（逗号分隔）</label>
+            <input className="dsh-mem-modalInput" value={editParticipants} onChange={e => setEditParticipants(e.target.value)} placeholder="userid1, userid2" />
+            <div className="dsh-mem-btnRow">
+              <button className="dsh-mem-btn" onClick={() => setEditId(null)}>取消</button>
+              <button className="dsh-mem-btn dsh-mem-btnPrimary" onClick={handleEdit}>保存</button>
             </div>
           </div>
         </div>
