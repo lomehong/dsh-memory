@@ -8,6 +8,7 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client/contract/slots'
+import { formatLocal } from '../time-format.js'
 
 interface MemoryEntry {
   id: string
@@ -213,7 +214,7 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
               const expired = e.expireAt && e.expireAt < now
               return (
                 <tr key={e.id} className={expired ? 'dsh-mem-trExpired' : undefined}>
-                  <td className="dsh-mem-td">{(e.timestamp || '').slice(0, 19).replace('T', ' ')}</td>
+                  <td className="dsh-mem-td">{formatLocal(e.timestamp)}</td>
                   <td className="dsh-mem-td"><span className="dsh-mem-badge dsh-mem-badgeNeutral">{e.type}</span></td>
                   <td className="dsh-mem-td dsh-mem-content" title={e.content}>{e.content}</td>
                   <td className="dsh-mem-td"><span className="dsh-mem-badge" data-scope={e.scope}>{SCOPE_LABELS[e.scope] || e.scope}</span></td>

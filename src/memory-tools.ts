@@ -26,6 +26,7 @@ import {
 } from './memory-store.ts'
 import type { StatementType, MemorySource, MemoryAuth, MemoryVerify } from './memory-store.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { formatLocal } from './time-format.js'
 
 const AUTH_STATUSES = ['未授权', '已授权', '已拒绝'] as const
 const SOURCE_ORIGINS = ['seed', 'conversation', 'yuyi_message', 'tool_result', 'human', 'api'] as const
@@ -197,7 +198,7 @@ export function registerMemoryTools(
         returned: sliced.length,
         entries: sliced.map(e => ({
           id: e.id,
-          time: e.timestamp.slice(0, 19).replace('T', ' '),
+          time: formatLocal(e.timestamp),
           type: e.type,
           statementType: effectiveStatementType(e),
           lifecycle: effectiveLifecycle(e),
@@ -338,7 +339,7 @@ export function getMemorySummaryForUser(userId: string, isMaster: boolean): stri
     .map(([t, n]) => `${t}×${n}`)
     .join('、')
   const latest = allowed[allowed.length - 1]
-  const latestTime = latest ? latest.timestamp.slice(0, 19).replace('T', ' ') : '未知'
+  const latestTime = latest ? formatLocal(latest.timestamp) : '未知'
 
   const scopeNote = current.length !== allowed.length ? `（另有 ${allowed.length - current.length} 条历史版本）` : ''
   return `【共享记忆】你共有 ${allowed.length} 条共享记忆${scopeNote}，当前有效 ${current.length} 条（${breakdown}；最近一条写入于 ${latestTime}）。使用 memory_read 可按陈述类型过滤（如查授权记录）。`
