@@ -1,5 +1,5 @@
 schema: 1
-status: 待审核
+status: 已确认
 confirmed: 2026-09-10
 service: dsh-memory（@dsh-extra/dsh-memory）
 domain: dsh-ecosystem

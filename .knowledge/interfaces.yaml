@@ -1,5 +1,5 @@
 schema: 1
-status: 待审核
+status: 已确认
 services:
   - name: dsh-memory（cordis 服务）
     kind: cordis-service
