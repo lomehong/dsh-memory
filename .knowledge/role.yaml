@@ -1,0 +1,50 @@
+schema: 1
+status: 待审核
+confirmed: 2026-09-10
+service: dsh-memory（@dsh-extra/dsh-memory）
+domain: dsh-ecosystem
+role: DSH 套件的跨会话共享记忆库——scope/participants 可见性 + 认识论治理（陈述类型/替代链/归档/审计回执）的 JSON 文件存储，经 cordis 服务、模型工具与 HTTP 管理面对套件各仓提供读写与按回合装配。
+capabilities:
+  - 提供 cordis 服务 'dsh-memory'（无硬注入、声明 provide 提早加载，避免 im-channel 在 agent 创建时取不到）
+    source: src/index.ts:provide
+  - registerMemoryTools(agentCtx, userId, isMaster)：注册 memory_write/memory_read（全员）与 memory_update/memory_delete（仅主人），工具注销绑定 agent 生命周期
+    source: src/memory-tools.ts:registerMemoryTools
+  - getMemorySummaryForUser(userId, isMaster)：生成真实元信息摘要（条数/陈述类型分布/最近写入时间）供注入系统提示词，不声称「相关」
+    source: src/memory-tools.ts:getMemorySummaryForUser
+  - addMemoryEntry/supersedeMemoryEntry/updateMemoryEntry/archiveMemoryEntry/deleteMemoryEntry/clearSharedMemory/pruneExpiredMemories：文件锁内事务化存储操作；陈述类变更走替代链，超限移归档
+    source: src/memory-store.ts:withLock
+  - assemblePack(userId, isMaster, query)：服务面按回合记忆装配，失败返回空文本绝不阻断消息派发（im-channel 以 memoryAssemblePerTurn 开关接入，默认关）
+    source: src/index.ts:apply
+  - assembleMemoryPack(viewer, query)：可见性→生命周期→关键词→截断装配，落审计回执（逐条字节/支持度/可见性依据/packSha256），fail-closed
+    source: src/memory-assemble.ts:assembleMemoryPack
+  - registerMemoryApi：HTTP 管理面（管理页/token 下发/条目增删改/归档/清除/清理过期），写操作 token 门禁 + 同源校验
+    source: src/memory-api.ts:registerMemoryApi
+  - registerAssembleApi：POST /dsh-memory/assemble（token 门禁，不信任请求体自报 isMaster）与 POST /dsh-memory/openloop/close
+    source: src/memory-assemble.ts:registerAssembleApi
+  - 关系轨（v2.1）：addRelationEntry 写 type='relation'/scope='self'/participants=[actorId] 条目；closeOpenLoop 闭环；openLoopsForActor 查询未闭环
+    source: src/memory-store.ts:addRelationEntry
+  - 关系摘要段自动回注：viewer.actorId 命中时确定性选取开环（≤5）+ 近期观察/推断（合计≤10），1200 字节预算，随 pack 与回执落盘
+    source: src/memory-assemble.ts:buildRelationDigest
+  - 过期记忆自动清理：插件加载时一次 + 每 10 分钟定时，dispose 时清定时器
+    source: src/index.ts:apply
+  - 浏览器端「记忆」Tab（conversation.view slot，order 20）与 main/sidebar.panellist 全局面板（特性检测双写，缺席静默跳过）
+    source: src/client/index.ts:apply
+sources:
+  - src/index.ts:apply
+  - src/memory-store.ts:withLock
+  - src/memory-tools.ts:registerMemoryTools
+  - src/memory-tools.ts:getMemorySummaryForUser
+  - src/memory-api.ts:registerMemoryApi
+  - src/memory-assemble.ts:assembleMemoryPack
+  - src/memory-assemble.ts:registerAssembleApi
+  - src/memory-assemble.ts:buildRelationDigest
+  - src/memory-store.ts:addRelationEntry
+  - src/client/index.ts:apply
+  - src/tools.ts:apply
+  - src/time-format.ts:formatLocal
+gaps:
+  - README「架构/数据存储」节仍写旧路径 ~/.dsh/im-channel/credentials/shared-memory.json，与 src/memory-store.ts 现行 $DSH_HOME/dsh-memory/ 不一致（README 未随迁移更新）
+  - GET /dsh-memory/entries 与 /archive 无按用户权限过滤（代码注释自认待 webServer 会话身份），管理页为主人视图
+  - tools.ts preset 固定以 (userId='master', isMaster=true) 注册；IM 渠道覆盖为真实身份的逻辑在 im-channel 仓，未在本仓代码内
+  - docs/决策记忆治理-设计.md、memory-admin-page.ts、MemoryView.tsx 仅抽读（头部/导出/调用点），未逐行通读
+  - 「对话区第三个 Tab」的最终排序取决于其他插件的 slot order，本仓仅能证实自身 order: 20

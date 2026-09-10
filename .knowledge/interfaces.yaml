@@ -1,0 +1,74 @@
+schema: 1
+status: 待审核
+services:
+  - name: dsh-memory（cordis 服务）
+    kind: cordis-service
+    summary: ctx.get('dsh-memory') 暴露 registerMemoryTools/getMemorySummaryForUser/loadSharedMemory/loadArchivedMemories/filterMemoriesByUser/filterMemoriesForRead/addMemoryEntry/clearSharedMemory/updateMemoryEntry/supersedeMemoryEntry/markMemorySuperseded/archiveMemoryEntry/deleteMemoryEntry/pruneExpiredMemories/effectiveStatementType/effectiveLifecycle/assemblePack
+    source: src/index.ts:apply
+  - name: memory_write
+    kind: model-tool
+    summary: 写入记忆；参数含 content/type/statementType/scope/participants/sourceOrigin/sourceRef/hubEndorsed/auth*/verify*；默认主人=事实+human、访客=候选+conversation，访客传 master 回落 self
+    source: src/memory-tools.ts:registerMemoryTools
+  - name: memory_read
+    kind: model-tool
+    summary: 按权限过滤读取；keywords/limit（默认 20 最大 50）/statementType 过滤/includeSuperseded/includeArchived；默认仅「当前」条目
+    source: src/memory-tools.ts:registerMemoryTools
+  - name: memory_update
+    kind: model-tool
+    summary: 仅主人；content/statementType/type 变更走替代链返回新 id，scope/participants 原地修改
+    source: src/memory-tools.ts:registerMemoryTools
+  - name: memory_delete
+    kind: model-tool
+    summary: 仅主人；按 id 物理删除（仅想移出视野应改用归档）
+    source: src/memory-tools.ts:registerMemoryTools
+  - name: GET /dsh-memory
+    kind: http
+    summary: 治理视图管理页（陈述类型分布/替代链/归档区），token 内联注入
+    source: src/memory-api.ts:registerMemoryApi
+  - name: GET /dsh-memory/token
+    kind: http
+    summary: 下发写操作校验 token（启动时 randomBytes(16) 生成；自定义头跨域不可携带，兼作 CSRF 防护）
+    source: src/memory-api.ts:registerMemoryApi
+  - name: GET|POST /dsh-memory/entries
+    kind: http
+    summary: 单路由按方法分发；GET 返回全部条目（无按用户过滤）；POST 需 x-memory-token，写入固定 author=admin/authorRole=master、默认陈述「事实」、默认 scope master
+    source: src/memory-api.ts:registerMemoryApi
+  - name: POST /dsh-memory/entries/update
+    kind: http
+    summary: 需 token；content/statementType 变更走替代链（响应含 mode=替代（历史保留）与 superseded），纯 scope/participants 原地
+    source: src/memory-api.ts:registerMemoryApi
+  - name: POST /dsh-memory/entries/delete
+    kind: http
+    summary: 需 token；按 id 删除，未找到 404
+    source: src/memory-api.ts:registerMemoryApi
+  - name: POST /dsh-memory/entries/archive
+    kind: http
+    summary: 需 token；手动归档（标「已归档」移入归档文件，可查回）
+    source: src/memory-api.ts:registerMemoryApi
+  - name: GET /dsh-memory/archive
+    kind: http
+    summary: 归档区列表（主人视图，无按用户过滤）
+    source: src/memory-api.ts:registerMemoryApi
+  - name: POST /dsh-memory/clear
+    kind: http
+    summary: 需 token；清空活跃集，归档区保留
+    source: src/memory-api.ts:registerMemoryApi
+  - name: POST /dsh-memory/prune
+    kind: http
+    summary: 需 token；清除过期条目，返回 pruned 数
+    source: src/memory-api.ts:registerMemoryApi
+  - name: POST /dsh-memory/assemble
+    kind: http
+    summary: 需 x-memory-token（不信任自报 isMaster）；body userId/keywords（截 5 个）/statementType/limit/turnId/actorId，返回 pack+receipt
+    source: src/memory-assemble.ts:registerAssembleApi
+  - name: POST /dsh-memory/openloop/close
+    kind: http
+    summary: body memoryId/via；仅同源校验、无 token 门禁（与 assemble 不同）；闭环成功 200 否则 404
+    source: src/memory-assemble.ts:registerAssembleApi
+  - name: 「记忆」Tab + 侧边栏面板
+    kind: client-panel
+    summary: 对话区 conversation.view slot order 20；宿主具备 main/sidebar.panellist 时特性检测挂全局面板；样式走 --dsw-alias-* 语义令牌
+    source: src/client/index.ts:apply
+gaps:
+  - 未发现任何 event（事件）的消费或发布；本仓接口仅 cordis-service/model-tool/http/client-panel 四类
+  - 管理页与 MemoryView 的完整交互流（编辑/归档按钮等）未逐行核对（memory-admin-page.ts、MemoryView.tsx 抽读）

@@ -1,0 +1,67 @@
+schema: 1
+status: 待审核
+consumes:
+  - name: webServer
+    kind: cordis-service
+    degradation: 可选注入（ctx.inject(['webServer'],...)）；缺席时服务与工具不受影响，仅 HTTP 管理面/装配/开环路由不注册
+    source: src/index.ts:apply
+  - name: tools
+    kind: cordis-service
+    degradation: tools.ts preset 入口硬注入；运行时 agent.tools.register 缺失则跳过工具注册并 WARN，不视为致命
+    source: src/tools.ts:inject
+  - name: '@deepseek-ai/dsh-tools'
+    kind: npm-peer-dependency
+    degradation: defineTool 包装工具定义；无降级路径（装载期依赖）
+    source: package.json:peerDependencies
+  - name: '@deepseek-ai/dsh-session'
+    kind: npm-peer-dependency
+    degradation: 仅类型导入（JsonValue），零运行时依赖
+    source: src/memory-tools.ts:renderJson
+  - name: dsh-client-runtime / dsh-client-ui-conversation / dsh-client-ui-slots
+    kind: client-inject
+    degradation: 浏览器端注入（package.json dsh.client.inject）；main/sidebar.panellist slot 缺席时特性检测静默跳过，仅保留对话 Tab
+    source: src/client/index.ts:apply
+consumed_by:
+  - name: im-channel（dsh-im-bot 仓）
+    source: dsh-im-bot/im-channel/src/plugin/driver.ts:mountSharedMemory
+    note: agent 创建时挂载记忆工具；服务缺席先 WARN 再 ctx.inject(['dsh-memory']) 就绪补注册
+  - name: im-channel（dsh-im-bot 仓）
+    source: dsh-im-bot/im-channel/src/plugin/driver.ts:injectMemoryContext
+    note: getMemorySummaryForUser 摘要注入 agent 上下文；服务缺席直接 return
+  - name: im-channel（dsh-im-bot 仓）
+    source: dsh-im-bot/im-channel/src/plugin/driver.ts:prompt
+    note: memoryAssemblePerTurn 开启时逐回合调 assemblePack，失败跳过不阻断派发（默认关）
+  - name: dsh-task-board
+    source: dsh-task-board/src/memory.ts:recordTaskOutcome
+    note: 任务落定终态写「已验证结果」记忆（addMemoryEntry）；缺席/失败 WARN 一次显式降级
+  - name: dsh-task-board
+    source: dsh-task-board/src/index.ts:apply
+    note: injectMemoryGetter 接线惰性获取 ctx.get('dsh-memory')
+  - name: dsh-twin
+    source: dsh-twin/src/index.ts:seedMemory
+    note: 知识种子写入（statementType=事实、origin=seed、按内容去重）；缺席返回 available=false
+  - name: dsh-twin
+    source: dsh-twin/src/index.ts:consolidateMemory
+    note: 记忆整理：归一化后同作者同范围近重复条目走替代链标「已替代」保留最新
+  - name: dsh-twin
+    source: dsh-twin/src/index.ts:collectStats
+    note: 用量统计读 loadSharedMemory 记忆条数/类型分布
+  - name: dsh-twin
+    source: dsh-twin/src/index.ts:apply
+    note: timer tick 从关系轨未闭环开环汇入状态卡/触达候选（openLoopsForActor/loadSharedMemory）
+  - name: dsh-twin（客户端）
+    source: dsh-twin/src/client/dashboard.tsx:closeLoop
+    note: POST /dsh-memory/openloop/close（via=主人确认）
+  - name: dsh-twin（客户端）
+    source: dsh-twin/src/client/profiles.tsx:closeLoop
+    note: 同上，关系档案页闭环入口
+  - name: dsh-actors
+    source: dsh-actors/src/index.ts:apply
+    note: /dsh-actors/profiles 关系档案聚合软依赖 loadSharedMemory 关系轨；缺席仅注册表视图
+  - name: dsh-yuyi
+    source: dsh-yuyi/src/tools/messaging.ts:yuyi_inbox
+    note: 提示词层指引（非代码 import）：指引模型把御驿消息存记忆时用 memory_write 且 statementType=候选
+gaps:
+  - dsh-task-board/src/index.ts 的 getter 接线是 apply 内闭包，无独立导出符号，以 apply 指代
+  - dsh-twin/src/proactive.ts 头注声称从 dsh-memory 关系轨汇入状态卡，未逐行核实其调用链
+  - dsh-twin/scripts/smoke-v2.mjs 以绝对路径引用 dsh-memory/lib（开发期冒烟），未计入正式消费方

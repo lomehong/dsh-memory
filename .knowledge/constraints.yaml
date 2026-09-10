@@ -1,0 +1,53 @@
+schema: 1
+status: 待审核
+state_machines:
+  - name: 生命周期 lifecycle
+    rules: 当前→已替代（supersedeMemoryEntry 创建新条目双向链接 supersedes/supersededBy；markMemorySuperseded 不删除仅推进）；当前→已归档（archiveMemoryEntry 移入归档文件）；旧条目缺字段读取按「当前」；读取默认滤掉已替代与已归档
+    source: src/memory-store.ts:supersedeMemoryEntry
+  - name: 判断状态 support
+    rules: 提议中/已支持/已动摇；缺省读取按「提议中」；更新为原地写（支持度是证据态度不是陈述，不走替代链）
+    source: src/memory-store.ts:updateMemorySupport
+  - name: 开环 openLoop
+    rules: openedAt 起、closedAt 止；closedAt 缺省=未闭环；closeOpenLoop 幂等（已闭环原样返回）
+    source: src/memory-store.ts:closeOpenLoop
+red_lines:
+  - 访客不可写 master scope，传入一律回落 self；memory_update/memory_delete 工具仅注册给主人
+    source: src/memory-tools.ts:registerMemoryTools
+  - 陈述类变更（content/statementType/type）必须走替代链产生新条目并保留历史，禁止原地覆盖
+    source: src/memory-store.ts:updateMemoryEntry
+  - 「已验证结果」缺 verify.status=已验证 时写入回落「候选」；「授权」缺 auth 补「未授权」（来源登记 ≠ 事实晋升）
+    source: src/memory-store.ts:normalizeEntryEpistemics
+  - 活跃集上限 MAX_ENTRIES=500，超限按淘汰优先级（已替代→候选/推断/偏好→其他→授权最后）移归档而非删除；归档上限 MAX_ARCHIVE_ENTRIES=5000 按最旧 FIFO
+    source: src/memory-store.ts:enforceActiveCapUnlocked
+  - 全部读-改-写在异步自旋文件锁（总超时 5s、锁文件 >15s 陈旧接管）内完成；写入先临时文件再原子重命名；损坏文件备份 .corrupt-<时间戳> 不静默覆盖
+    source: src/memory-store.ts:withLock
+  - 写路由（entries POST/clear/update/delete/archive/prune/assemble）需 x-memory-token；全部路由带 Origin 同源校验（跨源 403）
+    source: src/memory-api.ts:registerMemoryApi
+  - 数据落盘 $DSH_HOME/dsh-memory/（shared-memory.json / shared-memory-archive.json / receipts/），不写兄弟插件目录（v2.1 前误挂 im-channel/credentials 已迁移整改，宪章 §5-02 销账）
+    source: src/memory-store.ts:memoryPath
+  - 装配 fail-closed：viewer.userId 缺失抛错不发布部分上下文；服务面 assemblePack 失败返回空文本绝不阻断消息派发
+    source: src/memory-assemble.ts:assembleMemoryPack
+  - POST /dsh-memory/assemble 必须走 token 门禁，不信任请求体自报的 isMaster（返回主人可见记忆包）
+    source: src/memory-assemble.ts:registerAssembleApi
+  - 存储保持 UTC ISO，仅展示层转本地时区（历史事故：UI 对 ISO 裸切片致 UTC+8 晚 8 小时）
+    source: src/time-format.ts:formatLocal
+test_entry: npm test（vitest run → tests/memory-store.spec.ts、tests/memory-api.spec.ts、tests/time-format.spec.ts）；tests/smoke-v2.mjs 与 tests/smoke-v21.mjs 为手动 node 冒烟脚本（文件名不含 .spec/.test，vitest 默认不收录）
+compat_notes:
+  - 旧条目无认识论字段：读取缺省按 候选（statementType）/当前（lifecycle）/未验证（verify）/提议中（support） 解释，向后兼容
+    source: src/memory-store.ts:effectiveStatementType
+  - v2.1 前机器级旧路径 ~/.dsh/im-channel/credentials/ 首次读取自动复制到实例级目录，旧文件保留作迁移备份，迁移幂等
+    source: src/memory-store.ts:migrateLegacyStore
+  - /dsh-memory/entries 单路由按 HTTP 方法分发 GET/POST（同 path 注册两次会使 DSH webServer 路由冲突，曾致后续路由全部注册失败）
+    source: src/memory-api.ts:registerMemoryApi
+  - tools.ts preset 固定以 userId='master'、isMaster=true 注册（web GUI 视角）；IM 渠道会话由 im-channel 以真实身份覆盖挂载
+    source: src/tools.ts:apply
+  - HTTP POST /entries 管理页写入固定 author='admin'、authorRole='master'、默认陈述「事实」、默认 scope 'master'
+    source: src/memory-api.ts:registerMemoryApi
+  - memory_read limit 默认 20、上限 50，结果取最后 limit 条（slice(-limit)）
+    source: src/memory-tools.ts:registerMemoryTools
+  - 回执落盘 $DSH_HOME/dsh-memory/receipts/<日期>/<turnId>.json（0600），滚动清理 90 天前目录
+    source: src/memory-assemble.ts:saveReceipt
+gaps:
+  - webServer.register 的 kind:'exact' 路由协议由 DSH 宿主定义，本仓 src/types.d.ts 仅声明形状，宿主侧行为未核实
+  - cordis.patch.yml「早加载」的装载顺序保证依据宪章 §4 注，未在本仓代码内可证
+  - POST /dsh-memory/openloop/close 无 token 门禁（仅同源校验），是否属待整改项需主人裁决
