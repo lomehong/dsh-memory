@@ -4,7 +4,8 @@ DSH（DeepSeek Harness）套件的跨会话共享记忆插件：JSON 文件记�
 ## src/ 结构
 - index.ts — 入口：provide 'dsh-memory' 服务（含 autopilotReviewNow）、过期清理定时器、注入 webServer 注册 HTTP 路由
 - memory-store.ts — 核心存储：文件锁+原子写、认识论字段、替代链/归档区/关系轨/开环、旧路径迁移、检索切词（splitKeywords/searchMemoriesByKeywords）
-- memory-tools.ts — memory_write/read/update/delete 工具定义与注册、系统提示词记忆摘要、挂载即登记会话视角（viewerByCtx WeakMap，自动驾驶身份来源）
+- memory-tools.ts — memory_write/read/update/delete 工具定义与注册、系统提示词记忆摘要、挂载即登记会话视角（实现在 memory-viewer.ts，此处再导出）
+- memory-viewer.ts — 会话视角登记叶子模块（viewerByCtx WeakMap，自动驾驶身份来源；零依赖——CI 依赖卫生守卫锁定，不得引入 @deepseek-ai/* 值导入）
 - memory-autopilot.ts — 记忆自动驾驶（v2.2）：读侧按轮自动装配（systemPrompt `memory-pack` 段，order 28）+ 写侧对话复盘沉淀（agent/status idle 去抖 + 周期兜底 + 宿主 llm 提取 + 判重落库）+ 审批留痕（approval/request 观察者，透传不改裁决）+ autopilot.json 配置；身份未登记 fail-closed 跳过
 - memory-assemble.ts — assembleMemoryPack 装配+审计回执落盘、assemble/openloop 路由、回执 90 天清理（多关键词评分检索路径）
 - memory-api.ts — HTTP 管理面路由（x-memory-token 门禁 + Origin 同源校验）

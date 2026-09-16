@@ -27,7 +27,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { assembleMemoryPack, type AssembleViewer } from './memory-assemble.ts'
-import { memoryViewerOf } from './memory-tools.ts'
+import { memoryViewerOf } from './memory-viewer.ts'
 import {
   addMemoryEntry,
   effectiveStatementType,

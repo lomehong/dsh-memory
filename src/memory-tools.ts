@@ -39,31 +39,11 @@ function renderJson(_args: unknown, value: JsonValue): Array<{ type: string; tex
   return [{ type: 'text' as const, text }]
 }
 
-/**
- * 会话视角登记表（v2.2 自动化用）：挂载即登记，零接口变更。
- *
- * 两条挂载路径都会经过 registerMemoryTools——web 预设行（tools.ts，
- * isMaster=true）与 im-channel 驱动挂载（真实 userId/isMaster）——在挂载点
- * 把「哪个 agent 上下文是什么视角」记入 WeakMap，自动装配段据此做可见性
- * 过滤。身份未登记的会话一律 fail-closed 跳过注入/沉淀（LESSONS 8 模式：
- * 宁可少注入，不可泄露给无法证明身份的对话者）。
- *
- * 键取 agentCtx（= systemPrompt 段 context.agent.ctx，与 dsh-twin noteActor
- * 的 WeakMap 取法一致）；模块级单例：web 预设行与 bundle 共享同一份包实例。
- */
-const viewerByCtx = new WeakMap<object, { userId: string; isMaster: boolean }>()
-
-/** 挂载点登记会话视角（registerMemoryTools 自动调用；一般无需手工调用）。 */
-export function noteMemoryViewer(agentCtx: unknown, userId: string, isMaster: boolean): void {
-  if (agentCtx === null || typeof agentCtx !== 'object') return
-  viewerByCtx.set(agentCtx as object, { userId, isMaster })
-}
-
-/** 查询会话视角；未登记返回 undefined（调用方应 fail-closed 跳过）。 */
-export function memoryViewerOf(agentCtx: unknown): { userId: string; isMaster: boolean } | undefined {
-  if (agentCtx === null || typeof agentCtx !== 'object') return undefined
-  return viewerByCtx.get(agentCtx as object)
-}
+// 会话视角登记（v2.2）：实现在零依赖叶子模块 memory-viewer.ts（CI 依赖
+// 卫生——memory-tools 顶部的 dsh-tools 值导入是 peerDep，测试图不得拉进
+// npm ci 后的安装树）；导入即再导出，公共 API 不变。
+import { memoryViewerOf, noteMemoryViewer } from './memory-viewer.ts'
+export { memoryViewerOf, noteMemoryViewer }
 
 /** 注册共享记忆工具到 agent 上下文 */
 export function registerMemoryTools(

@@ -251,3 +251,15 @@ describe('loadAutopilotConfig 缺省回退', () => {
     expect(config.approvalMemory).toBe(true)
   })
 })
+
+describe('CI 依赖卫生（Release #7 事故回归守卫）', () => {
+  it('memory-viewer / memory-autopilot 不得出现 @deepseek-ai/* 值导入（peerDep 在 CI npm ci 后缺席）', async () => {
+    const { readFileSync } = await import('node:fs')
+    // viewer 是零依赖叶子：整文件不得出现 scoped 宿主包引用（含注释，防止误导）
+    const viewerSrc = readFileSync(new URL('../src/memory-viewer.ts', import.meta.url), 'utf8')
+    expect(viewerSrc).not.toMatch(/@deepseek-ai\//)
+    // autopilot 允许 import type（构建期擦除）；禁止值导入
+    const autopilotSrc = readFileSync(new URL('../src/memory-autopilot.ts', import.meta.url), 'utf8')
+    expect(autopilotSrc).not.toMatch(/^import (?!type\b).*from '@deepseek-ai\//m)
+  })
+})
