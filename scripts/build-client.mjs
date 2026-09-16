@@ -44,9 +44,9 @@ const footer = `		return module.exports;
 	}
 });`
 
-console.log('[build-client] bundling src/client/index.ts → lib/client.js …')
+console.log('[build-client] bundling src/client/index.tsx → lib/client.js …')
 const result = await build({
-  entryPoints: [resolve(root, 'src/client/index.ts')],
+  entryPoints: [resolve(root, 'src/client/index.tsx')],
   bundle: true,
   format: 'cjs',
   platform: 'browser',
