@@ -22,6 +22,7 @@ import {
   filterMemoriesByUser,
   filterMemoriesForRead,
   searchMemories,
+  searchMemoriesByKeywords,
   effectiveStatementType,
   effectiveSupport,
   effectiveLifecycle,
@@ -117,8 +118,12 @@ export function assembleMemoryPack(viewer: AssembleViewer, query: AssembleQuery 
       ? filterMemoriesForRead(visible, { statementType: query.statementType })
       : filterMemoriesForRead(visible)
   if (query.keywords !== undefined && query.keywords.length > 0) {
-    for (const kw of query.keywords) {
-      visible = searchMemories(visible, kw)
+    if (query.keywords.length === 1) {
+      // 单关键词：保持整句包含语义（memory_read 显式查询路径不变）
+      visible = searchMemories(visible, query.keywords[0]!)
+    } else {
+      // 多关键词（自动装配切词产物）：OR 命中 + 评分排序
+      visible = searchMemoriesByKeywords(visible, query.keywords)
     }
   }
   const pack = visible.slice(-limit)

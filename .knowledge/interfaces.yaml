@@ -3,8 +3,12 @@ status: 已确认
 services:
   - name: dsh-memory（cordis 服务）
     kind: cordis-service
-    summary: ctx.get('dsh-memory') 暴露 registerMemoryTools/getMemorySummaryForUser/loadSharedMemory/loadArchivedMemories/filterMemoriesByUser/filterMemoriesForRead/addMemoryEntry/clearSharedMemory/updateMemoryEntry/supersedeMemoryEntry/markMemorySuperseded/archiveMemoryEntry/deleteMemoryEntry/pruneExpiredMemories/effectiveStatementType/effectiveLifecycle/assemblePack
+    summary: ctx.get('dsh-memory') 暴露 registerMemoryTools/getMemorySummaryForUser/loadSharedMemory/loadArchivedMemories/filterMemoriesByUser/filterMemoriesForRead/addMemoryEntry/clearSharedMemory/updateMemoryEntry/supersedeMemoryEntry/markMemorySuperseded/archiveMemoryEntry/deleteMemoryEntry/pruneExpiredMemories/effectiveStatementType/effectiveLifecycle/assemblePack/autopilotReviewNow
     source: src/index.ts:apply
+  - name: memory-autopilot（systemPrompt 段 + 宿主事件消费）
+    kind: cordis-service
+    summary: v2.2 记忆自动驾驶：读侧 systemPrompt 段 memory-pack（order 28，按轮切词装配注入，同轮多步按 messageId+库 mtime 缓存）；写侧对话复盘（agent/status idle 去抖 + 周期兜底 + 宿主 llm/agentDefaultModel 提取 + 判重落库）；审批留痕（approval/request 观察者，透传不改裁决）；配置 $DSH_HOME/dsh-memory/autopilot.json；身份未登记 fail-closed 跳过
+    source: src/memory-autopilot.ts:registerMemoryAutopilot
   - name: memory_write
     kind: model-tool
     summary: 写入记忆；参数含 content/type/statementType/scope/participants/sourceOrigin/sourceRef/hubEndorsed/auth*/verify*；默认主人=事实+human、访客=候选+conversation，访客传 master 回落 self
@@ -70,5 +74,5 @@ services:
     summary: 对话区 conversation.view slot order 20；宿主具备 main/sidebar.panellist 时特性检测挂全局面板；样式走 --dsw-alias-* 语义令牌
     source: src/client/index.ts:apply
 gaps:
-  - 未发现任何 event（事件）的消费或发布；本仓接口仅 cordis-service/model-tool/http/client-panel 四类
+  - 未发现任何 event（事件）的发布；事件消费面（memory-autopilot：agent/inbox/claimed、session/event、session/disposed、agent/status、approval/request）已随 v2.2 登记
   - 管理页与 MemoryView 的完整交互流（编辑/归档按钮等）未逐行核对（memory-admin-page.ts、MemoryView.tsx 抽读）

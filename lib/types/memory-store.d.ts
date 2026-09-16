@@ -133,6 +133,21 @@ export declare function filterMemoriesForRead(entries: MemoryEntry[], options?: 
 export declare function getMemorySummary(entries: MemoryEntry[]): string;
 /** 按关键词搜索 */
 export declare function searchMemories(entries: MemoryEntry[], keyword: string): MemoryEntry[];
+/**
+ * 把一条用户消息切成检索关键词（v2.2 自动装配用）。
+ *
+ * 背景：按回合装配曾把**整条消息当单个关键词**传入 searchMemories（整句
+ * includes），正常长度的消息几乎必然零命中——这是「开了开关也注入不到
+ * 东西」的直接原因。切词策略：拉丁/数字词元整体保留；CJK 连续段 ≤4 字
+ * 整段保留，更长段滑窗切 2-gram；停用表过滤；去重后按出现顺序截断。
+ */
+export declare function splitKeywords(text: string, max?: number): string[];
+/**
+ * 多关键词评分检索：任一关键词命中即入选（OR），按命中数降序、时间倒序
+ * 排列。与 searchMemories（单关键词整句包含）互补——多词切词场景下「命中
+ * 越多的条目越相关」比「包含整句」有效得多。v2.2 自动装配检索基元。
+ */
+export declare function searchMemoriesByKeywords(entries: MemoryEntry[], keywords: string[]): MemoryEntry[];
 /** 清除所有活跃记忆（归档区保留，历史不物理删除） */
 export declare function clearSharedMemory(): Promise<boolean>;
 export interface MemoryActor {

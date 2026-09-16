@@ -10,6 +10,13 @@
  * 主人亲述默认「事实」，访客与外部消息默认「候选」，来源登记 ≠ 事实晋升。
  */
 import type { Context } from '@deepseek-ai/cordis';
+/** 挂载点登记会话视角（registerMemoryTools 自动调用；一般无需手工调用）。 */
+export declare function noteMemoryViewer(agentCtx: unknown, userId: string, isMaster: boolean): void;
+/** 查询会话视角；未登记返回 undefined（调用方应 fail-closed 跳过）。 */
+export declare function memoryViewerOf(agentCtx: unknown): {
+    userId: string;
+    isMaster: boolean;
+} | undefined;
 /** 注册共享记忆工具到 agent 上下文 */
 export declare function registerMemoryTools(agentCtx: Context, userId: string, isMaster: boolean): void;
 /**

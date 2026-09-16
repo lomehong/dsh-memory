@@ -463,6 +463,87 @@ export function searchMemories(entries: MemoryEntry[], keyword: string): MemoryE
   )
 }
 
+/** 检索切词停用表：单字由最短长度过滤，这里只收常见虚词/功能词与高频空转词 */
+const KEYWORD_STOPWORDS: ReadonlySet<string> = new Set([
+  // 中文虚词/功能词（多为切词产物）
+  '我们', '你们', '他们', '她们', '它们', '什么', '怎么', '这个', '那个', '哪个',
+  '然后', '所以', '因为', '如果', '但是', '还是', '就是', '可以', '应该', '已经',
+  '没有', '不是', '一个', '一下', '自己', '大家', '谢谢', '麻烦', '帮我', '帮忙',
+  '现在', '时候', '这样', '那样', '需要', '可能', '觉得', '知道', '看看',
+  // 英文功能词
+  'the', 'and', 'for', 'with', 'this', 'that', 'have', 'has', 'are', 'was',
+  'will', 'would', 'could', 'should', 'please', 'just', 'about', 'from',
+])
+
+/**
+ * 把一条用户消息切成检索关键词（v2.2 自动装配用）。
+ *
+ * 背景：按回合装配曾把**整条消息当单个关键词**传入 searchMemories（整句
+ * includes），正常长度的消息几乎必然零命中——这是「开了开关也注入不到
+ * 东西」的直接原因。切词策略：拉丁/数字词元整体保留；CJK 连续段 ≤4 字
+ * 整段保留，更长段滑窗切 2-gram；停用表过滤；去重后按出现顺序截断。
+ */
+export function splitKeywords(text: string, max = 8): string[] {
+  if (typeof text !== 'string') return []
+  const trimmed = text.trim()
+  if (trimmed === '') return []
+  const cap = Math.max(1, Math.min(32, max))
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (raw: string): void => {
+    const kw = raw.trim().toLowerCase()
+    if (kw.length < 2 || kw.length > 24) return
+    if (KEYWORD_STOPWORDS.has(kw)) return
+    if (seen.has(kw)) return
+    seen.add(kw)
+    out.push(kw)
+  }
+  // 拉丁/数字词元（含 @/#.- 等常见标识符字符）
+  for (const m of trimmed.matchAll(/[A-Za-z0-9_@.#/\\-]{2,}/g)) push(m[0])
+  // CJK 连续段：短段整体保留，长段滑窗 2-gram
+  for (const m of trimmed.matchAll(/[\u4e00-\u9fff]{2,}/g)) {
+    const run = m[0]
+    if (run.length <= 4) {
+      push(run)
+      continue
+    }
+    for (let i = 0; i + 2 <= run.length; i++) push(run.slice(i, i + 2))
+  }
+  return out.slice(0, cap)
+}
+
+/** 去重计分的检索结果项（内部用） */
+interface KeywordHit {
+  entry: MemoryEntry
+  hits: number
+}
+
+/**
+ * 多关键词评分检索：任一关键词命中即入选（OR），按命中数降序、时间倒序
+ * 排列。与 searchMemories（单关键词整句包含）互补——多词切词场景下「命中
+ * 越多的条目越相关」比「包含整句」有效得多。v2.2 自动装配检索基元。
+ */
+export function searchMemoriesByKeywords(entries: MemoryEntry[], keywords: string[]): MemoryEntry[] {
+  const kws = keywords
+    .filter(k => typeof k === 'string' && k.trim() !== '')
+    .map(k => k.toLowerCase())
+  if (kws.length === 0) return entries
+  const scored: KeywordHit[] = []
+  for (const entry of entries) {
+    const hay = `${entry.content}\n${entry.type}`.toLowerCase()
+    let hits = 0
+    for (const kw of kws) {
+      if (hay.includes(kw)) hits += 1
+    }
+    if (hits > 0) scored.push({ entry, hits })
+  }
+  scored.sort((a, b) =>
+    b.hits - a.hits ||
+    String(b.entry.timestamp).localeCompare(String(a.entry.timestamp)),
+  )
+  return scored.map(s => s.entry)
+}
+
 /** 清除所有活跃记忆（归档区保留，历史不物理删除） */
 export async function clearSharedMemory(): Promise<boolean> {
   const result = await withLock(() => writeEntriesUnlocked([]))

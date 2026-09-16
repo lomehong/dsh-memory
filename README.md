@@ -7,9 +7,40 @@
 - **跨会话共享记忆** — 主人和访客各有独立会话，但记忆互通
 - **细粒度权限控制** — 三级 scope + 参与者机制，保护隐私
 - **DSH 工具集成** — 提供 `memory_read` / `memory_write` / `memory_update` / `memory_delete` 四个工具
+- **记忆自动驾驶（v2.2）** — 按轮自动装配注入、对话复盘自动沉淀、审批自动留痕，不依赖模型自觉（见下文）
 - **记忆过期机制** — 支持设置过期时间，插件加载时与定期自动清理过期记忆
 - **Web 管理页面** — 浏览器访问 `/dsh-memory` 管理记忆
 - **对话 Tab 集成** — 在 DSH 对话区域添加「记忆」Tab（第三个 Tab）
+
+## 记忆自动驾驶（v2.2）
+
+三个自动化能力全部只挂宿主接缝（`systemPrompt.section` / agent 事件 / `approval/request` waterfall），零套件包依赖；身份沿「驱动器挂载时登记」（web 预设行与 im-channel 挂载都经过 `registerMemoryTools`），**身份未登记的会话一律 fail-closed 跳过**——不注入、不沉淀：
+
+| 能力 | 触点 | 行为 |
+|---|---|---|
+| **按轮自动装配**（读） | 每轮用户消息进入回合（`agent/inbox/claimed`） | 消息切词 → 多关键词评分检索 → 相关记忆注入 system prompt `memory-pack` 段（每个模型步前刷新；同轮多步按 messageId+库 mtime 缓存，审计回执每轮一份） |
+| **对话复盘沉淀**（写） | 会话空闲（`agent/status`→idle，默认 90s 去抖）+ 周期兜底（默认 6h） | 对未消费的回合窗口做一次小预算 LLM 提取（宿主 llm 服务 + 默认模型），判重后落库：主人=`事实`、访客=`候选`，来源 `conversation`（ref=`autopilot:<sessionId>`）；提取失败不推进游标，留给下个触发点重试 |
+| **审批留痕** | `approval/request` 观察者（`await next()` 后记录、原样透传，不改变裁决） | 批准/拒绝自动落「授权」记忆（auth 四元组，`scope=master`）——不可逆动作前 `memory_read(statementType:'授权')` 即有据可查 |
+
+配置文件 `$DSH_HOME/dsh-memory/autopilot.json`（可省略 = 全默认；30s TTL 缓存）：
+
+```json
+{
+  "injectPerTurn": true,
+  "injectLimit": 5,
+  "injectBudgetBytes": 1600,
+  "reviewerEnabled": true,
+  "reviewOnIdle": true,
+  "idleDebounceSec": 90,
+  "reviewPeriodicHours": 6,
+  "reviewGuests": false,
+  "reviewMaxEntries": 5,
+  "reviewTranscriptChars": 4000,
+  "approvalMemory": true
+}
+```
+
+检索修复注记：v2.1 及之前按回合装配把**整条消息当单个关键词**（整句 includes），正常长度消息几乎必然零命中；v2.2 起 `assemblePack` 与自动装配共用 `splitKeywords` 切词 + `searchMemoriesByKeywords` 评分检索（任一关键词命中即入选，命中多者优先）。`memory_read` 单关键词显式查询语义不变。
 
 ## 权限模型
 

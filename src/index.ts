@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { registerMemoryApi } from './memory-api.ts'
 import { registerAssembleApi } from './memory-assemble.ts'
 import { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
+import { registerMemoryAutopilot, reviewAllWindows } from './memory-autopilot.ts'
 import {
   loadSharedMemory,
   loadArchivedMemories,
@@ -28,6 +29,7 @@ import {
   pruneExpiredMemories,
   effectiveStatementType,
   effectiveLifecycle,
+  splitKeywords,
 } from './memory-store.ts'
 import type { MemoryEntry, StatementType, LifecycleState, MemorySource, MemoryAuth, MemoryVerify, MemoryLifecycle } from './memory-store.ts'
 import { assembleMemoryPack } from './memory-assemble.ts'
@@ -41,6 +43,15 @@ export const provide = ['dsh-memory']
 
 export function apply(ctx: Context): void {
   ctx.logger?.info?.('[dsh-memory] 共享记忆插件已加载')
+
+  // v2.2 记忆自动驾驶：读侧按轮自动装配 + 写侧对话复盘沉淀 + 审批留痕。
+  // 全部宿主接缝、内部逐回调防御；失败只降级自动化能力，不影响下方核心服务。
+  try {
+    registerMemoryAutopilot(ctx)
+  } catch (error) {
+    ctx.logger?.warn?.('[dsh-memory] 自动驾驶注册失败（仅失去自动化，工具路径不受影响）:',
+      error instanceof Error ? error.message : String(error))
+  }
 
   // 注册为服务，供其他插件（如 im-channel）通过 ctx.get('dsh-memory') 访问
   const memoryService = {
@@ -60,12 +71,15 @@ export function apply(ctx: Context): void {
     pruneExpiredMemories,
     effectiveStatementType,
     effectiveLifecycle,
-    // 按回合记忆装配（可选增强，宪章第三阶段）：依消息文本检索相关记忆，
+    // 按回合记忆装配（v2.2 起检索升级）：把消息切词后多关键词评分检索，
     // 生成带审计回执的记忆包文本。im-channel 开关开启时逐回合调用；
     // 装配失败返回空文本，绝不阻断消息派发。
+    // （v2.2 注：web/IM 会话的按轮注入已由 memory-autopilot 的 systemPrompt
+    // 段自动完成，本方法保留给 im-channel 旧开关路径与进程内消费方。）
     assemblePack: (userId: string, isMaster: boolean, query: string): { text: string } => {
       try {
-        const result = assembleMemoryPack({ userId, isMaster }, { keywords: [query.trim()].filter(Boolean), limit: 8 })
+        const keywords = splitKeywords(query, 8)
+        const result = assembleMemoryPack({ userId, isMaster }, { keywords, limit: 8 })
         if (result.pack.length === 0) return { text: '' }
         const lines = result.pack.map(e => `• [${effectiveStatementType(e)}] ${e.content}`)
         return { text: `【相关共享记忆（自动装配，仅供参考）】\n${lines.join('\n')}` }
@@ -73,6 +87,8 @@ export function apply(ctx: Context): void {
         return { text: '' }
       }
     },
+    // v2.2 自动驾驶：手动触发一轮复盘（管理/调试用），返回沉淀条数
+    autopilotReviewNow: (): Promise<number> => reviewAllWindows(ctx),
   }
   ;(ctx as unknown as { provide: (name: string, value: unknown) => void }).provide('dsh-memory', memoryService)
 

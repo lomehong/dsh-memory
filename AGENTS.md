@@ -1,18 +1,19 @@
 # dsh-memory（@dsh-extra/dsh-memory）
-DSH（DeepSeek Harness）套件的跨会话共享记忆插件：JSON 文件记忆库，scope+participants 三级可见性，v2 起带认识论治理（六类陈述类型/来源归因/授权/验证/替代链/归档区）与按回合装配审计回执；经 cordis 服务、模型工具、HTTP 管理面与浏览器 Tab 四个面对套件其他仓提供能力。
+DSH（DeepSeek Harness）套件的跨会话共享记忆插件：JSON 文件记忆库，scope+participants 三级可见性，v2 起带认识论治理（六类陈述类型/来源归因/授权/验证/替代链/归档区）与按回合装配审计回执，v2.2 起带记忆自动驾驶（读侧按轮自动装配注入/写侧对话复盘沉淀/审批留痕，不依赖模型自觉）；经 cordis 服务、模型工具、HTTP 管理面与浏览器 Tab 四个面对套件其他仓提供能力。
 
 ## src/ 结构
-- index.ts — 入口：provide 'dsh-memory' 服务、过期清理定时器、注入 webServer 注册 HTTP 路由
-- memory-store.ts — 核心存储：文件锁+原子写、认识论字段、替代链/归档区/关系轨/开环、旧路径迁移
-- memory-tools.ts — memory_write/read/update/delete 工具定义与注册、系统提示词记忆摘要
-- memory-assemble.ts — assembleMemoryPack 装配+审计回执落盘、assemble/openloop 路由、回执 90 天清理
+- index.ts — 入口：provide 'dsh-memory' 服务（含 autopilotReviewNow）、过期清理定时器、注入 webServer 注册 HTTP 路由
+- memory-store.ts — 核心存储：文件锁+原子写、认识论字段、替代链/归档区/关系轨/开环、旧路径迁移、检索切词（splitKeywords/searchMemoriesByKeywords）
+- memory-tools.ts — memory_write/read/update/delete 工具定义与注册、系统提示词记忆摘要、挂载即登记会话视角（viewerByCtx WeakMap，自动驾驶身份来源）
+- memory-autopilot.ts — 记忆自动驾驶（v2.2）：读侧按轮自动装配（systemPrompt `memory-pack` 段，order 28）+ 写侧对话复盘沉淀（agent/status idle 去抖 + 周期兜底 + 宿主 llm 提取 + 判重落库）+ 审批留痕（approval/request 观察者，透传不改裁决）+ autopilot.json 配置；身份未登记 fail-closed 跳过
+- memory-assemble.ts — assembleMemoryPack 装配+审计回执落盘、assemble/openloop 路由、回执 90 天清理（多关键词评分检索路径）
 - memory-api.ts — HTTP 管理面路由（x-memory-token 门禁 + Origin 同源校验）
 - memory-admin-page.ts — GET /dsh-memory 治理视图管理页（内联 HTML/JS）
 - tools.ts — agent preset 入口（@dsh-extra/dsh-memory/tools），按主人身份注册工具
 - time-format.ts — ISO(UTC)→本地时区展示文本
 - types.d.ts — 宿主模块类型声明桩（独立编译用）
 - client/ — 浏览器端「记忆」Tab/侧边栏面板（index.ts + MemoryView.tsx）
-- tests/ — vitest 单测（store/api/time-format）+ 手动冒烟脚本（smoke-v2/v21.mjs）
+- tests/ — vitest 单测（store/api/time-format/autopilot）+ 手动冒烟脚本（smoke-v2/v21.mjs）
 - docs/决策记忆治理-设计.md — v2 认识论治理设计（移植自 Decision Assistant）
 - cordis.patch.yml — bundle 补丁：无硬注入、声明 provide 提早加载
 
