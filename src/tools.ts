@@ -17,6 +17,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { registerMemoryTools } from './memory-tools.ts'
 import { captureClaim, SECTION_NAME, SECTION_ORDER, renderMemorySection, trace } from './memory-autopilot.ts'
+import { memoryViewerOf, noteMemoryViewer } from './memory-viewer.ts'
 
 export const name = 'tool-memory'
 export const inject = ['tools', 'systemPrompt']
@@ -28,13 +29,24 @@ export function apply(ctx: Context): void {
   registerMemoryTools(ctx, 'master', true)
   trace('registerMemoryTools 完成（identity 已登记 viewerByCtx）')
 
-  // per-agent 捕获兜底：app 层监听若收不到 agent 级事件，本会话自己的 ctx 上
-  // 再挂一份（captureClaim 按消息 id 幂等，双监听不双捕）。
+  // per-agent 捕获兜底 + 身份自愈：app 层监听若收不到 agent 级事件，本会话自己的
+  // ctx 上再挂一份（captureClaim 按消息 id 幂等，双监听不双捕）。claimed 事件的
+  // payload 自带 agent.ctx——若其 viewer 未登记，用**挂载声明**（'master', true）
+  // 补登：能挂本 preset 行的会话，身份声明就是主人（im-channel 会另行覆盖正确身份）。
   try {
     const events = ctx as unknown as { on?: (event: string, handler: (payload: unknown) => void) => void }
     if (typeof events.on === 'function') {
-      events.on('agent/inbox/claimed', (payload: unknown) => { try { captureClaim(payload) } catch { /* 防御 */ } })
-      trace('per-agent claimed 监听已注册')
+      events.on('agent/inbox/claimed', (payload: unknown) => {
+        try { captureClaim(payload) } catch { /* 防御 */ }
+        try {
+          const agentCtx = (payload as { agent?: { ctx?: unknown } } | undefined)?.agent?.ctx
+          if (agentCtx !== null && typeof agentCtx === 'object' && memoryViewerOf(agentCtx) === undefined) {
+            noteMemoryViewer(agentCtx, 'master', true)
+            trace('身份自愈：claimed 事件的 agentCtx 以挂载声明补登（master）')
+          }
+        } catch { /* 防御 */ }
+      })
+      trace('per-agent claimed 监听已注册（含身份自愈）')
     } else {
       trace('ctx.on 缺席——per-agent claimed 兜底不可用')
     }
