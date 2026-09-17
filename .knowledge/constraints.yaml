@@ -26,7 +26,10 @@ red_lines:
   - 数据落盘 $DSH_HOME/dsh-memory/（shared-memory.json / shared-memory-archive.json / receipts/），不写兄弟插件目录（v2.1 前误挂 im-channel/credentials 已迁移整改，宪章 §5-02 销账）
     source: src/memory-store.ts:memoryPath
   - 装配 fail-closed：viewer.userId 缺失抛错不发布部分上下文；服务面 assemblePack 失败返回空文本绝不阻断消息派发
+    source: src/memory-assemble.ts:assembleMemoryPack  - 按轮装配选包语义：关键词检索路径取「命中数降序头部」（slice(0,limit)），无关键词路径取存储序尾部（最近）；禁止统一尾部切片（2026-09-15 实测：尾部切片切掉最相关条目，分身据错误记忆包做出错误行动）
     source: src/memory-assemble.ts:assembleMemoryPack
+  - memory-pack 段注册只能在 agent 挂载点（tools.ts，inject=['tools','systemPrompt']）；禁止 bundle app 层 ctx.inject(['systemPrompt'])——per-agent 服务拓扑下永不触发（2026-09-15 实证：装配回执 0 条静默哑火）
+    source: src/tools.ts:apply
   - POST /dsh-memory/assemble 必须走 token 门禁，不信任请求体自报的 isMaster（返回主人可见记忆包）
     source: src/memory-assemble.ts:registerAssembleApi
   - 存储保持 UTC ISO，仅展示层转本地时区（历史事故：UI 对 ISO 裸切片致 UTC+8 晚 8 小时）

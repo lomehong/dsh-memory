@@ -8,6 +8,9 @@ consumes:
   - name: tools
     kind: cordis-service
     degradation: tools.ts preset 入口硬注入；运行时 agent.tools.register 缺失则跳过工具注册并 WARN，不视为致命
+    source: src/tools.ts:inject  - name: systemPrompt
+    kind: cordis-service
+    degradation: tools.ts preset 入口硬注入（挂载点注册 memory-pack 按轮装配段）；服务缺席仅失去按轮自动装配，工具路径不受影响（WARN + mount-trace.log 落盘）
     source: src/tools.ts:inject
   - name: '@deepseek-ai/dsh-tools'
     kind: npm-peer-dependency
