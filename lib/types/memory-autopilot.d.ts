@@ -1,4 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
+/** 文件级追踪（与 tools.ts 的 mount-trace.log 同文件；logger 缺席时唯一可见通道）。 */
+export declare function trace(line: string): void;
 export interface AutopilotConfig {
     /** 读侧：按轮自动装配注入（默认开） */
     injectPerTurn: boolean;
@@ -44,6 +46,9 @@ export interface TurnWindow {
     lastActivityAt: number;
     reviewing: boolean;
 }
+/** 用户消息进入回合：仅记忆已挂载的会话建窗/追加（身份未登记 → 忽略）。
+ *  同消息 id 幂等（app 层与 per-agent 双监听并存时防双捕）。 */
+export declare function captureClaim(payload: unknown): void;
 export declare const SECTION_NAME = "memory-pack";
 /** dsh-twin 人格/守卫/活动段占用 25/26/27，记忆装配段紧随其后 */
 export declare const SECTION_ORDER = 28;

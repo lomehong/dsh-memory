@@ -22,7 +22,7 @@
  *
  * @module dsh-memory/memory-autopilot
  */
-import { readFileSync, statSync } from 'node:fs'
+import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -35,6 +35,15 @@ import {
   loadSharedMemory,
   splitKeywords,
 } from './memory-store.ts'
+
+/** 文件级追踪（与 tools.ts 的 mount-trace.log 同文件；logger 缺席时唯一可见通道）。 */
+export function trace(line: string): void {
+  try {
+    const base = process.env.DSH_HOME ?? ''
+    if (base === '') return
+    appendFileSync(`${base}/dsh-memory/mount-trace.log`, `${new Date().toISOString()} ${line}\n`, 'utf8')
+  } catch { /* 追踪绝不击穿宿主 */ }
+}
 
 /* ─────────────────── 配置 ─────────────────── */
 
@@ -184,16 +193,21 @@ function sessionIdOfAgent(agent: unknown): string | undefined {
   return typeof sid === 'string' && sid !== '' ? sid : undefined
 }
 
-/** 用户消息进入回合：仅记忆已挂载的会话建窗/追加（身份未登记 → 忽略）。 */
-function captureClaim(payload: unknown): void {
+/** 用户消息进入回合：仅记忆已挂载的会话建窗/追加（身份未登记 → 忽略）。
+ *  同消息 id 幂等（app 层与 per-agent 双监听并存时防双捕）。 */
+export function captureClaim(payload: unknown): void {
   const p = payload as { agent?: { ctx?: unknown; id?: unknown }; message?: { content?: unknown; id?: unknown } } | undefined
   const agent = p?.agent
   const agentCtx = (agent as { ctx?: unknown } | undefined)?.ctx
   const viewer = memoryViewerOf(agentCtx)
-  if (viewer === undefined) return
+  if (viewer === undefined) { trace('capture: viewer 未登记 → 忽略'); return }
   const sessionId = sessionIdOfAgent(agent)
-  if (sessionId === undefined) return
+  if (sessionId === undefined) { trace('capture: sessionId 缺失 → 忽略'); return }
   const text = textOfBlocks(p?.message?.content)
+  const msgId = p?.message?.id
+  const prev = agentCtx !== null && typeof agentCtx === 'object' ? lastClaimByCtx.get(agentCtx as object) : undefined
+  if (prev !== undefined && msgId !== undefined && prev.id === msgId) return
+  trace(`capture: 命中 "${text.slice(0, 24)}…"`)
 
   let window = windows.get(sessionId)
   if (window === undefined) {
@@ -292,21 +306,23 @@ function buildPackText(viewer: AssembleViewer, messageText: string, config: Auto
 export function renderMemorySection(context: unknown): string {
   try {
     const config = loadAutopilotConfig()
-    if (config.injectPerTurn !== true) return ''
+    if (config.injectPerTurn !== true) { trace('render: 门1 injectPerTurn=false → 空串'); return '' }
     const agent = (context as { agent?: { ctx?: unknown } } | undefined)?.agent
     const agentCtx = agent?.ctx
-    if (agentCtx === null || typeof agentCtx !== 'object') return ''
+    if (agentCtx === null || typeof agentCtx !== 'object') { trace('render: 门2 agentCtx 缺失 → 空串'); return '' }
     const viewer = memoryViewerOf(agentCtx)
-    if (viewer === undefined) return ''
+    if (viewer === undefined) { trace('render: 门3 viewer 未登记（工具未挂载本会话？）→ 空串'); return '' }
     const claim = lastClaimByCtx.get(agentCtx as object)
-    if (claim === undefined || claim.text.trim() === '') return ''
+    if (claim === undefined || claim.text.trim() === '') { trace(`render: 门4 claim 缺失（agent/inbox/claimed 事件未达?）→ 空串`); return '' }
     const key = `${String(claim.id)}:${memoryStoreMtime()}`
     const cached = sectionCache.get(agentCtx as object)
-    if (cached !== undefined && cached.key === key) return cached.text
+    if (cached !== undefined && cached.key === key) { trace('render: 缓存命中（同轮同库）'); return cached.text }
     const text = buildPackText(viewer, claim.text, config)
+    trace(`render: 装配完成 claim="${claim.text.slice(0, 24)}…" 产出 ${text.length} 字`)
     sectionCache.set(agentCtx as object, { key, text })
     return text
-  } catch {
+  } catch (error) {
+    trace(`render: 异常 ${error instanceof Error ? error.message : String(error)}`)
     return ''
   }
 }
