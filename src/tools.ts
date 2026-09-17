@@ -37,14 +37,16 @@ export function apply(ctx: Context): void {
     const events = ctx as unknown as { on?: (event: string, handler: (payload: unknown) => void) => void }
     if (typeof events.on === 'function') {
       events.on('agent/inbox/claimed', (payload: unknown) => {
-        try { captureClaim(payload) } catch { /* 防御 */ }
         try {
+          // 自愈必须在 captureClaim **之前**：captureClaim 的 viewer 门会提前返回，
+          // 先补登身份，捕获才能落 lastClaim（段回调的门4 才有 claim 可取）。
           const agentCtx = (payload as { agent?: { ctx?: unknown } } | undefined)?.agent?.ctx
           if (agentCtx !== null && typeof agentCtx === 'object' && memoryViewerOf(agentCtx) === undefined) {
             noteMemoryViewer(agentCtx, 'master', true)
             trace('身份自愈：claimed 事件的 agentCtx 以挂载声明补登（master）')
           }
         } catch { /* 防御 */ }
+        try { captureClaim(payload) } catch { /* 防御 */ }
       })
       trace('per-agent claimed 监听已注册（含身份自愈）')
     } else {
