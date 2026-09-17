@@ -677,26 +677,9 @@ export function registerMemoryAutopilot(ctx: Context): void {
     return outcome
   })
 
-  // 6) 读侧：systemPrompt 记忆装配段（systemPrompt 服务就绪后再挂）
-  if (typeof events.inject === 'function') {
-    events.inject(['systemPrompt'], sctx => {
-      try {
-        const systemPrompt = (sctx as AutopilotHostCtx | undefined)?.get?.('systemPrompt') as
-          | { section?: (s: unknown) => unknown }
-          | undefined
-        if (systemPrompt !== undefined && typeof systemPrompt.section === 'function') {
-          systemPrompt.section({
-            name: SECTION_NAME,
-            order: SECTION_ORDER,
-            text: renderMemorySection,
-          })
-          logger?.info?.('[dsh-memory] 自动装配段已注册（systemPrompt memory-pack）')
-        }
-      } catch (error) {
-        logger?.warn?.('[dsh-memory] 自动装配段注册失败:', error instanceof Error ? error.message : String(error))
-      }
-    })
-  }
+  // 6) 读侧：memory-pack 段注册已迁移至 tools.ts（agent 挂载点，自洽）——
+  //    此前的 app 层 ctx.inject(['systemPrompt']) 在 per-agent 服务拓扑下永不触发
+  //    （2026-09-15 根治：装配回执 0 条实证后迁移）。
 
   // 7) 周期兜底复盘 + 过期窗口清扫（tick 10min，到点才真正扫）
   const periodic = setInterval(() => {
