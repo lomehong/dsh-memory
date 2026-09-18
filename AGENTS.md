@@ -13,7 +13,7 @@ DSH（DeepSeek Harness）套件的跨会话共享记忆插件：JSON 文件记�
 - tools.ts — agent preset 入口（@dsh-extra/dsh-memory/tools），按主人身份注册工具 + **挂载点注册 memory-pack 按轮装配段**（inject=['tools','systemPrompt']，自洽——禁止 app 层注入 per-agent 服务）+ claimed 捕获兜底与身份自愈（master）+ mount-trace.log 落盘
 - time-format.ts — ISO(UTC)→本地时区展示文本
 - types.d.ts — 宿主模块类型声明桩（独立编译用）
-- client/ — 浏览器端「记忆」Tab/侧边栏面板（index.ts + MemoryView.tsx）
+- client/ — 浏览器端「记忆」Tab/侧边栏面板（index.ts + MemoryView.tsx）+ 插件页配置区（AutopilotConfigForm.tsx，plugins.bundle.config：记忆自动驾驶 11 项开关与预算）
 - tests/ — vitest 单测（store/api/time-format/autopilot）+ 手动冒烟脚本（smoke-v2/v21.mjs）
 - docs/决策记忆治理-设计.md — v2 认识论治理设计（移植自 Decision Assistant）
 - cordis.patch.yml — bundle 补丁：无硬注入、声明 provide 提早加载

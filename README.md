@@ -22,7 +22,8 @@
 | **对话复盘沉淀**（写） | 会话空闲（`agent/status`→idle，默认 90s 去抖）+ 周期兜底（默认 6h） | 对未消费的回合窗口做一次小预算 LLM 提取（宿主 llm 服务 + 默认模型），判重后落库：主人=`事实`、访客=`候选`，来源 `conversation`（ref=`autopilot:<sessionId>`）；提取失败不推进游标，留给下个触发点重试 |
 | **审批留痕** | `approval/request` 观察者（`await next()` 后记录、原样透传，不改变裁决） | 批准/拒绝自动落「授权」记忆（auth 四元组，`scope=master`）——不可逆动作前 `memory_read(statementType:'授权')` 即有据可查 |
 
-配置文件 `$DSH_HOME/dsh-memory/autopilot.json`（可省略 = 全默认；30s TTL 缓存）：
+配置文件 `$DSH_HOME/dsh-memory/autopilot.json`（可省略 = 全默认；30s TTL 缓存）。
+配置入口：「插件」管理页本插件配置区的表单（`AutopilotConfigForm`，经 `GET/POST /dsh-memory/autopilot` 读写，保存即失效缓存立即生效）；手改 json 同样有效：
 
 ```json
 {

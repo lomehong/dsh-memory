@@ -69,10 +69,18 @@ services:
     kind: http
     summary: body memoryId/via；仅同源校验、无 token 门禁（与 assemble 不同）；闭环成功 200 否则 404
     source: src/memory-assemble.ts:registerAssembleApi
+  - name: GET|POST /dsh-memory/autopilot
+    kind: http
+    summary: 记忆自动驾驶配置读/写（单路由按方法分发）；GET 同源即可，POST 需 x-memory-token；saveAutopilotConfig 补丁合并现有值→mergeAutopilotConfig 夹紧→0600 原子写→失效 30s 配置缓存
+    source: src/memory-api.ts:registerMemoryApi
   - name: 「记忆」Tab + 侧边栏面板
     kind: client-panel
     summary: 对话区 conversation.view slot order 20；宿主具备 main/sidebar.panellist 时特性检测挂全局面板；样式走 --dsw-alias-* 语义令牌
     source: src/client/index.ts:apply
+  - name: 插件页配置区（plugins.bundle.config key=@dsh-extra/dsh-memory）
+    kind: client-panel
+    summary: 记忆自动驾驶配置表单（AutopilotConfigForm）：读侧装配/写侧复盘/审批留痕共 11 项开关与预算，经 GET/POST /dsh-memory/autopilot 读写，保存即生效
+    source: src/client/index.tsx:apply
 gaps:
   - 未发现任何 event（事件）的发布；事件消费面（memory-autopilot：agent/inbox/claimed、session/event、session/disposed、agent/status、approval/request）已随 v2.2 登记
   - 管理页与 MemoryView 的完整交互流（编辑/归档按钮等）未逐行核对（memory-admin-page.ts、MemoryView.tsx 抽读）
