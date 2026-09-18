@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { loadSharedMemory, loadArchivedMemories, clearSharedMemory, addMemoryEntry, updateMemoryEntry, deleteMemoryEntry, archiveMemoryEntry, pruneExpiredMemories, STATEMENT_TYPES, effectiveStatementType } from './memory-store.ts'
 import type { MemorySource, MemoryAuth, MemoryVerify, StatementType } from './memory-store.ts'
+import { loadAutopilotConfig, saveAutopilotConfig } from './memory-autopilot.ts'
 import { serveAdminPage } from './memory-admin-page.ts'
 
 /** 读取请求体 JSON */
@@ -300,6 +301,34 @@ export function registerMemoryApi(web: {
       try {
         const count = await pruneExpiredMemories()
         respondJson(res as ServerResponse, 200, { ok: true, pruned: count })
+      } catch (error) {
+        respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
+      }
+    },
+  })
+
+  // /dsh-memory/autopilot - 记忆自动驾驶配置（GET 读取 / POST 保存，单路由按方法分发）。
+  // POST 沿用 token 门禁（不信任请求体，夹紧校验在 saveAutopilotConfig 内）；GET 同源即可（配置无敏感值）。
+  register({
+    kind: 'exact',
+    path: '/dsh-memory/autopilot',
+    handler: async (req: unknown, res: unknown) => {
+      if (req && typeof req === 'object' && (req as IncomingMessage).method === 'POST') {
+        if (!hasAdminToken(req as IncomingMessage, adminToken)) {
+          unauthorized(res as ServerResponse)
+          return
+        }
+        try {
+          const body = await readJsonBody(req as IncomingMessage)
+          const saved = saveAutopilotConfig(body)
+          respondJson(res as ServerResponse, 200, { ok: true, config: saved })
+        } catch (error) {
+          respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
+        }
+        return
+      }
+      try {
+        respondJson(res as ServerResponse, 200, { ok: true, config: loadAutopilotConfig() })
       } catch (error) {
         respondJson(res as ServerResponse, 500, { ok: false, error: messageOf(error) })
       }

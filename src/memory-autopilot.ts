@@ -22,9 +22,9 @@
  *
  * @module dsh-memory/memory-autopilot
  */
-import { appendFileSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { assembleMemoryPack, type AssembleViewer } from './memory-assemble.ts'
 import { memoryViewerOf } from './memory-viewer.ts'
@@ -129,6 +129,26 @@ export function loadAutopilotConfig(now = Date.now()): AutopilotConfig {
   }
   configCache = { at: now, value: merged }
   return merged
+}
+
+/** 保存自动驾驶配置：现有值合并补丁 → mergeAutopilotConfig 夹紧校验 → 原子写 → 失效缓存。返回保存后的完整配置。 */
+export function saveAutopilotConfig(patch: unknown, now = Date.now()): AutopilotConfig {
+  let currentRaw: unknown = {}
+  try {
+    currentRaw = JSON.parse(readFileSync(autopilotConfigPath(), 'utf8'))
+  } catch { /* 缺文件/坏文件 → 从默认值起步 */ }
+  const merged = (currentRaw !== null && typeof currentRaw === 'object' && patch !== null && typeof patch === 'object')
+    ? { ...(currentRaw as Record<string, unknown>), ...(patch as Record<string, unknown>) }
+    : patch
+  const value = mergeAutopilotConfig(merged)
+  // 原子写（tmp + rename，0600），与记忆库同一写纪律
+  const path = autopilotConfigPath()
+  mkdirSync(dirname(path), { recursive: true })
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+  renameSync(tmp, path)
+  configCache = { at: now, value }
+  return value
 }
 
 /* ─────────────────── 回合窗口捕获 ─────────────────── */

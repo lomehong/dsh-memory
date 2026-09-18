@@ -29,6 +29,8 @@ export interface AutopilotConfig {
 export declare function mergeAutopilotConfig(raw: unknown): AutopilotConfig;
 /** 读取自动驾驶配置（30s TTL 缓存；缺文件/解析失败 → 全默认）。 */
 export declare function loadAutopilotConfig(now?: number): AutopilotConfig;
+/** 保存自动驾驶配置：现有值合并补丁 → mergeAutopilotConfig 夹紧校验 → 原子写 → 失效缓存。返回保存后的完整配置。 */
+export declare function saveAutopilotConfig(patch: unknown, now?: number): AutopilotConfig;
 export interface TurnWindow {
     sessionId: string;
     agentCtx: unknown;

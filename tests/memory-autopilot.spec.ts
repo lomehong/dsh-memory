@@ -252,6 +252,20 @@ describe('loadAutopilotConfig 缺省回退', () => {
   })
 })
 
+describe('saveAutopilotConfig 保存与夹紧', () => {
+  it('补丁合并现有值 → 夹紧 → 原子写 → 读回一致，未指定键保留默认', async () => {
+    const { saveAutopilotConfig, loadAutopilotConfig } = await import('../src/memory-autopilot.ts')
+    const now = Date.now() + 121_000
+    const saved = saveAutopilotConfig({ injectLimit: 99, reviewGuests: true }, now)
+    expect(saved.injectLimit).toBe(20) // 越界夹紧到上限
+    expect(saved.reviewGuests).toBe(true)
+    expect(saved.reviewerEnabled).toBe(true) // 未指定键保留默认值
+    const reread = loadAutopilotConfig(now + 61_000) // 绕过缓存从磁盘读回
+    expect(reread.injectLimit).toBe(20)
+    expect(reread.reviewGuests).toBe(true)
+  })
+})
+
 describe('CI 依赖卫生（Release #7 事故回归守卫）', () => {
   it('memory-viewer / memory-autopilot 不得出现 @deepseek-ai/* 值导入（peerDep 在 CI npm ci 后缺席）', async () => {
     const { readFileSync } = await import('node:fs')

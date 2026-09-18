@@ -1,12 +1,15 @@
 /**
  * 共享记忆客户端插件
  *
- * 在对话区域注册「记忆」Tab，位于轨迹之后。
+ * 在对话区域注册「记忆」Tab（conversation.view + 全局面板特性检测双写），
+ * 并在「插件」管理页注册记忆自动驾驶配置区（plugins.bundle.config，key=包名）。
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { MemoryView } from './MemoryView.tsx'
+import { AutopilotPluginConfig } from './AutopilotConfigForm.tsx'
 
 export const inject = ['slots']
 
@@ -17,6 +20,11 @@ export function apply(ctx: ClientContext): void {
     order: 20,
     label: () => '记忆',
   }, MemoryView))
+  // 「插件」管理页配置区：记忆自动驾驶的开关与预算（读写 /dsh-memory/autopilot）
+  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+    name: 'plugins.bundle.config',
+    key: '@dsh-extra/dsh-memory',
+  }, (props: { view: 'summary' | 'page' }) => AutopilotPluginConfig({ view: props.view })))
   // alpha.2 全局面板（特性检测双写）：宿主具备 main/sidebar.panellist slot 时，
   // 记忆管理视图同时挂为侧边栏全局面板。alpha.1 无此 slot，静默跳过，零副作用。
   const slots = ctx.slots as ClientContext['slots'] & { spec?: (name: string) => unknown }
