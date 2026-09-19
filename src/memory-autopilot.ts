@@ -27,7 +27,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { assembleMemoryPack, type AssembleViewer } from './memory-assemble.ts'
-import { memoryViewerOf } from './memory-viewer.ts'
+import { memoryViewerOf, noteMemoryViewer } from './memory-viewer.ts'
 import {
   addMemoryEntry,
   effectiveStatementType,
@@ -662,8 +662,25 @@ export function registerMemoryAutopilot(ctx: Context): void {
     inject?: (deps: string[], cb: (sctx: unknown) => void) => void
   }
 
-  // 1) 捕获：用户消息进入回合（未登记身份的会话在 captureClaim 内忽略）
+  // 1) 捕获：用户消息进入回合（未登记身份的会话在 captureClaim 内忽略）。
+  //    运行时级身份自愈（2026-09-15，与 twin resolveGuestView 同款判别）：
+  //    未装 im-channel → 运行时无访客入口，网页会话一律主人（补登）；
+  //    已装 im-channel → 身份由其 mountSharedMemory 在 agent setup 标注，
+  //    未标注的会话 fail-closed 不自愈（宁可不注入，不可泄露给无法证明身份者）。
   events.on?.('agent/inbox/claimed', (payload: unknown): void => {
+    try {
+      const agentCtx = (payload as { agent?: { ctx?: unknown } } | undefined)?.agent?.ctx
+      if (agentCtx !== null && typeof agentCtx === 'object' && memoryViewerOf(agentCtx) === undefined) {
+        let imInstalled = false
+        try { imInstalled = Boolean((ctx as unknown as { get?: (n: string) => unknown }).get?.('im-channel')) } catch { imInstalled = false }
+        if (!imInstalled) {
+          noteMemoryViewer(agentCtx, 'master', true)
+          trace('身份自愈（运行时级）：无 im-channel，网页会话按主人补登')
+        }
+      }
+    } catch {
+      /* 自愈失败不影响捕获 */
+    }
     try {
       captureClaim(payload)
     } catch {
@@ -713,9 +730,10 @@ export function registerMemoryAutopilot(ctx: Context): void {
     return outcome
   })
 
-  // 6) 读侧：memory-pack 段注册已迁移至 tools.ts（agent 挂载点，自洽）——
-  //    此前的 app 层 ctx.inject(['systemPrompt']) 在 per-agent 服务拓扑下永不触发
-  //    （2026-09-15 根治：装配回执 0 条实证后迁移）。
+  // 6) 读侧：memory-pack 段注册已迁移至 index.ts apply（bundle 层 registerPackSection，
+  //    运行时级一次注册覆盖全部会话）——此前 app 层 ctx.inject(['systemPrompt']) 在
+  //    per-agent 服务拓扑下永不触发（2026-09-15 根治，装配回执 0 条实证）。
+  //    本函数保留写侧与捕获观察者（事件沿 cordis 总线冒泡，app 层可收）。
 
   // 7) 周期兜底复盘 + 过期窗口清扫（tick 10min，到点才真正扫）
   const periodic = setInterval(() => {
@@ -741,4 +759,30 @@ export function registerMemoryAutopilot(ctx: Context): void {
     pendingTimers.clear()
     windows.clear()
   })
+}
+
+/* ─────────────────── 读侧：运行时级段注册（bundle 层，自洽） ─────────────────── */
+
+let packSectionRegistered = false
+
+/**
+ * 把 memory-pack 段注册到宿主 systemPrompt 服务（index.ts apply 在 bundle 层调用一次）。
+ * 一次注册覆盖运行时全部会话——段回调按 agent 判别身份（context.agent.ctx），
+ * 未登记 fail-closed 空串；身份由 claimed 自愈（无 im-channel=主人）与
+ * im-channel mountSharedMemory（per-actor）供给。
+ *
+ * 幂等：重复调用直接返回（宿主对同名段重复注册会抛错）。
+ * 运行时解析（alpha.2 起）下 apply 可能晚于段消费方就绪——调用方负责重试
+ * （index.ts 的 250ms×40 兜底）。
+ */
+export function registerPackSection(systemPrompt: { section?: (s: unknown) => void }): void {
+  if (packSectionRegistered) return
+  if (!systemPrompt || typeof systemPrompt.section !== 'function') {
+    trace('registerPackSection: systemPrompt.section 缺席——未注册')
+    return
+  }
+  systemPrompt.section({ name: SECTION_NAME, order: SECTION_ORDER, text: renderMemorySection })
+  packSectionRegistered = true
+  trace('memory-pack 段注册成功（bundle 层一次，覆盖运行时全部会话）')
+  logger?.info?.('[dsh-memory] 按轮记忆装配段已注册（bundle 层，运行时全部会话覆盖）')
 }

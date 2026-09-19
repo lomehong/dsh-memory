@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { registerMemoryApi } from './memory-api.ts'
 import { registerAssembleApi } from './memory-assemble.ts'
 import { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
-import { registerMemoryAutopilot, reviewAllWindows } from './memory-autopilot.ts'
+import { registerMemoryAutopilot, registerPackSection, reviewAllWindows } from './memory-autopilot.ts'
 import {
   loadSharedMemory,
   loadArchivedMemories,
@@ -50,6 +50,29 @@ export function apply(ctx: Context): void {
     registerMemoryAutopilot(ctx)
   } catch (error) {
     ctx.logger?.warn?.('[dsh-memory] 自动驾驶注册失败（仅失去自动化，工具路径不受影响）:',
+      error instanceof Error ? error.message : String(error))
+  }
+
+  // 读侧运行时级接线（2026-09-15 重构）：memory-pack 段在 bundle 层注册一次，
+  // 覆盖运行时全部会话——不再依赖 preset 行挂载点（此前只有数字分身预设的会话
+  // 有记忆，与「跟 dsh 运行时走」的语义不符）。早加载时 systemPrompt 可能尚未
+  // 就绪，250ms×40 短重试兜底；仍缺席则降级为无自动注入（工具路径不受影响）。
+  try {
+    let attempts = 0
+    const tryRegister = (): void => {
+      attempts += 1
+      const sp = (ctx as unknown as { systemPrompt?: { section?: (s: unknown) => void } }).systemPrompt
+      if (sp && typeof sp.section === 'function') {
+        registerPackSection(sp)
+        ctx.logger?.info?.('[dsh-memory] memory-pack 段已注册（bundle 层，运行时级）')
+        return
+      }
+      if (attempts < 40) setTimeout(tryRegister, 250)
+      else ctx.logger?.warn?.('[dsh-memory] systemPrompt 服务 10s 未就绪——按轮装配未注册（工具路径不受影响）')
+    }
+    tryRegister()
+  } catch (error) {
+    ctx.logger?.warn?.('[dsh-memory] 按轮装配接线失败（工具路径不受影响）:',
       error instanceof Error ? error.message : String(error))
   }
 

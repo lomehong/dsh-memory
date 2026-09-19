@@ -125,4 +125,17 @@ export declare function approvalMemoryItem(req: unknown, outcome: ApprovalOutcom
  * 能挂上，缺席则只失去自动注入，核心工具路径不受影响）。
  */
 export declare function registerMemoryAutopilot(ctx: Context): void;
+/**
+ * 把 memory-pack 段注册到宿主 systemPrompt 服务（index.ts apply 在 bundle 层调用一次）。
+ * 一次注册覆盖运行时全部会话——段回调按 agent 判别身份（context.agent.ctx），
+ * 未登记 fail-closed 空串；身份由 claimed 自愈（无 im-channel=主人）与
+ * im-channel mountSharedMemory（per-actor）供给。
+ *
+ * 幂等：重复调用直接返回（宿主对同名段重复注册会抛错）。
+ * 运行时解析（alpha.2 起）下 apply 可能晚于段消费方就绪——调用方负责重试
+ * （index.ts 的 250ms×40 兜底）。
+ */
+export declare function registerPackSection(systemPrompt: {
+    section?: (s: unknown) => void;
+}): void;
 export {};
