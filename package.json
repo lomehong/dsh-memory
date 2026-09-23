@@ -1,6 +1,6 @@
 {
   "name": "@dsh-extra/dsh-memory",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "v2.2：记忆自动驾驶——按轮自动装配注入（切词检索）+ 对话复盘沉淀 + 审批留痕，不依赖模型自觉",
   "type": "module",
   "main": "lib/index.js",
@@ -50,6 +50,6 @@
     "vitest": "^3.2.7"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-tools": "0.1.7-alpha.2"
+    "@deepseek-ai/dsh-tools": ">=0.1.7-alpha.1"
   }
 }
