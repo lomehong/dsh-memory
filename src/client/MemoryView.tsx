@@ -76,11 +76,21 @@ const CSS = `
 .dsh-mem-badge[data-scope='public'] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent); color: var(--dsw-alias-brand-primary, var(--dsw-alias-label-secondary)); }
 .dsh-mem-empty { padding: 48px 24px; text-align: center; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .dsh-mem-overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 52%); z-index: 1000; display: flex; align-items: center; justify-content: center; }
-.dsh-mem-modal { background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; padding: 20px; min-width: 360px; max-width: 480px; box-shadow: 0 12px 36px rgb(0 0 0 / 36%); color: var(--dsw-alias-label-primary); }
-.dsh-mem-modalTitle { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+/* 弹窗宽度 720px 档（2026-09-26 主人反馈：480px 档下长记忆内容没法看）；
+   高度封顶 86vh 内部滚动，字段多的编辑窗不再溢出屏幕。 */
+.dsh-mem-modal { background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; padding: 20px 22px; width: min(720px, 92vw); max-height: 86vh; overflow-y: auto; box-shadow: 0 12px 36px rgb(0 0 0 / 36%); color: var(--dsw-alias-label-primary); }
+.dsh-mem-modalHead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.dsh-mem-modalTitle { flex: 1; margin: 0; font-size: 15.5px; font-weight: 600; }
+.dsh-mem-modalClose { width: 26px; height: 26px; flex-shrink: 0; border: none; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 1; cursor: pointer; }
+.dsh-mem-modalClose:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dsh-mem-modalMeta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
+.dsh-mem-modalRow { display: flex; gap: 12px; }
+.dsh-mem-modalRow > div { flex: 1; min-width: 0; }
 .dsh-mem-modalLabel { display: block; margin-bottom: 4px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .dsh-mem-modalInput, .dsh-mem-modalTextarea, .dsh-mem-modalSelect { width: 100%; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; font-size: 13px; margin-bottom: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-sizing: border-box; outline: none; transition: border-color .12s ease; font-family: inherit; }
-.dsh-mem-modalTextarea { min-height: 64px; resize: vertical; }
+/* 内容是弹窗的主体载荷：加高到 200px 档 + 舒适行高，长记忆可读可编辑 */
+.dsh-mem-modalTextarea { min-height: 200px; line-height: 1.65; resize: vertical; }
+.dsh-mem-modalCount { display: flex; justify-content: space-between; margin: -6px 0 12px; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 .dsh-mem-btnRow { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 `
 
@@ -90,7 +100,7 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
   const [search, setSearch] = useState('')
   const [scopeFilter, setScopeFilter] = useState('')
   const [showAdd, setShowAdd] = useState(false)
-  const [editId, setEditId] = useState<string | null>(null)
+  const [editEntry, setEditEntry] = useState<MemoryEntry | null>(null)
   const [addContent, setAddContent] = useState('')
   const [addType, setAddType] = useState('note')
   const [addScope, setAddScope] = useState('master')
@@ -114,6 +124,17 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
     api('/dsh-memory/token', 'GET').then(d => { setToken(String(d.token ?? '')) }).catch(() => {})
   }, [load])
 
+  // Esc 逐层关闭弹窗（添加优先于编辑）
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return
+      if (showAdd) setShowAdd(false)
+      else if (editEntry !== null) setEditEntry(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showAdd, editEntry])
+
   const filtered = entries.filter(e => {
     if (search && !e.content.toLowerCase().includes(search.toLowerCase()) && !e.type.toLowerCase().includes(search.toLowerCase())) return false
     if (scopeFilter && e.scope !== scopeFilter) return false
@@ -132,10 +153,10 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
   }
 
   async function handleEdit() {
-    if (!editId) return
+    if (editEntry === null) return
     const p = editParticipants.split(',').map(s => s.trim()).filter(Boolean)
-    const r = await api('/dsh-memory/entries/update', 'POST', { id: editId, content: editContent, scope: editScope, participants: p }, token)
-    if (r.ok) { setEditId(null); load() }
+    const r = await api('/dsh-memory/entries/update', 'POST', { id: editEntry.id, content: editContent, scope: editScope, participants: p }, token)
+    if (r.ok) { setEditEntry(null); load() }
     else { alert('更新失败: ' + (r.error || '未知错误')) }
   }
 
@@ -157,7 +178,7 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
   }
 
   function openEdit(e: MemoryEntry) {
-    setEditId(e.id)
+    setEditEntry(e)
     setEditContent(e.content)
     setEditScope(e.scope)
     setEditParticipants((e.participants || []).join(', '))
@@ -234,23 +255,39 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
       {showAdd && (
         <div className="dsh-mem-overlay" onClick={() => setShowAdd(false)}>
           <div className="dsh-mem-modal" onClick={e => e.stopPropagation()}>
-            <h3 className="dsh-mem-modalTitle">添加记忆</h3>
+            <div className="dsh-mem-modalHead">
+              <h3 className="dsh-mem-modalTitle">添加记忆</h3>
+              <button className="dsh-mem-modalClose" onClick={() => setShowAdd(false)} title="关闭（Esc）">×</button>
+            </div>
             <label className="dsh-mem-modalLabel">内容</label>
-            <textarea className="dsh-mem-modalTextarea" value={addContent} onChange={e => setAddContent(e.target.value)} placeholder="记忆内容" />
-            <label className="dsh-mem-modalLabel">类型</label>
-            <select className="dsh-mem-modalSelect" value={addType} onChange={e => setAddType(e.target.value)}>
-              <option value="note">笔记</option>
-              <option value="schedule_created">日程</option>
-              <option value="todo_created">待办</option>
-              <option value="decision">决策</option>
-              <option value="conversation_summary">对话摘要</option>
-            </select>
-            <label className="dsh-mem-modalLabel">可见范围</label>
-            <select className="dsh-mem-modalSelect" value={addScope} onChange={e => setAddScope(e.target.value)}>
-              <option value="master">仅主人可见</option>
-              <option value="self">主人+当事人</option>
-              <option value="public">所有人可见</option>
-            </select>
+            <textarea
+              className="dsh-mem-modalTextarea"
+              value={addContent}
+              onChange={e => setAddContent(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void handleAdd() }}
+              placeholder="记忆内容（支持多行；Ctrl+Enter 快速保存）"
+            />
+            <div className="dsh-mem-modalCount"><span>{addContent.trim() === '' ? '内容必填' : 'Ctrl+Enter 快速保存'}</span><span>{addContent.length} 字</span></div>
+            <div className="dsh-mem-modalRow">
+              <div>
+                <label className="dsh-mem-modalLabel">类型</label>
+                <select className="dsh-mem-modalSelect" value={addType} onChange={e => setAddType(e.target.value)}>
+                  <option value="note">笔记</option>
+                  <option value="schedule_created">日程</option>
+                  <option value="todo_created">待办</option>
+                  <option value="decision">决策</option>
+                  <option value="conversation_summary">对话摘要</option>
+                </select>
+              </div>
+              <div>
+                <label className="dsh-mem-modalLabel">可见范围</label>
+                <select className="dsh-mem-modalSelect" value={addScope} onChange={e => setAddScope(e.target.value)}>
+                  <option value="master">仅主人可见</option>
+                  <option value="self">主人+当事人</option>
+                  <option value="public">所有人可见</option>
+                </select>
+              </div>
+            </div>
             <label className="dsh-mem-modalLabel">参与者 userid（逗号分隔）</label>
             <input className="dsh-mem-modalInput" value={addParticipants} onChange={e => setAddParticipants(e.target.value)} placeholder="userid1, userid2" />
             <div className="dsh-mem-btnRow">
@@ -262,22 +299,46 @@ export function MemoryView(_props: ConvViewProps): JSX.Element {
       )}
 
       {/* 编辑记忆弹窗 */}
-      {editId !== null && (
-        <div className="dsh-mem-overlay" onClick={() => setEditId(null)}>
+      {editEntry !== null && (
+        <div className="dsh-mem-overlay" onClick={() => setEditEntry(null)}>
           <div className="dsh-mem-modal" onClick={e => e.stopPropagation()}>
-            <h3 className="dsh-mem-modalTitle">编辑记忆</h3>
+            <div className="dsh-mem-modalHead">
+              <h3 className="dsh-mem-modalTitle">编辑记忆</h3>
+              <button className="dsh-mem-modalClose" onClick={() => setEditEntry(null)} title="关闭（Esc）">×</button>
+            </div>
+            <div className="dsh-mem-modalMeta">
+              <span>{formatLocal(editEntry.timestamp)}</span>
+              <span>·</span>
+              <span>类型 {editEntry.type}</span>
+              <span>·</span>
+              <span>{editEntry.authorRole === 'master' ? '主人' : editEntry.author} 录入</span>
+              <span>·</span>
+              <span>{editEntry.id}</span>
+            </div>
             <label className="dsh-mem-modalLabel">内容</label>
-            <textarea className="dsh-mem-modalTextarea" value={editContent} onChange={e => setEditContent(e.target.value)} />
-            <label className="dsh-mem-modalLabel">可见范围</label>
-            <select className="dsh-mem-modalSelect" value={editScope} onChange={e => setEditScope(e.target.value)}>
-              <option value="master">仅主人可见</option>
-              <option value="self">主人+当事人</option>
-              <option value="public">所有人可见</option>
-            </select>
-            <label className="dsh-mem-modalLabel">参与者 userid（逗号分隔）</label>
-            <input className="dsh-mem-modalInput" value={editParticipants} onChange={e => setEditParticipants(e.target.value)} placeholder="userid1, userid2" />
+            <textarea
+              className="dsh-mem-modalTextarea"
+              value={editContent}
+              onChange={e => setEditContent(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void handleEdit() }}
+            />
+            <div className="dsh-mem-modalCount"><span>Ctrl+Enter 快速保存</span><span>{editContent.length} 字</span></div>
+            <div className="dsh-mem-modalRow">
+              <div>
+                <label className="dsh-mem-modalLabel">可见范围</label>
+                <select className="dsh-mem-modalSelect" value={editScope} onChange={e => setEditScope(e.target.value)}>
+                  <option value="master">仅主人可见</option>
+                  <option value="self">主人+当事人</option>
+                  <option value="public">所有人可见</option>
+                </select>
+              </div>
+              <div>
+                <label className="dsh-mem-modalLabel">参与者 userid（逗号分隔）</label>
+                <input className="dsh-mem-modalInput" value={editParticipants} onChange={e => setEditParticipants(e.target.value)} placeholder="userid1, userid2" style={{ marginTop: 0 }} />
+              </div>
+            </div>
             <div className="dsh-mem-btnRow">
-              <button className="dsh-mem-btn" onClick={() => setEditId(null)}>取消</button>
+              <button className="dsh-mem-btn" onClick={() => setEditEntry(null)}>取消</button>
               <button className="dsh-mem-btn dsh-mem-btnPrimary" onClick={handleEdit}>保存</button>
             </div>
           </div>
