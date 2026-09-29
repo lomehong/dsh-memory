@@ -12,7 +12,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { registerMemoryApi } from './memory-api.ts'
 import { registerAssembleApi } from './memory-assemble.ts'
-import { registerMemoryTools, getMemorySummaryForUser } from './memory-tools.ts'
+import { registerMemoryTools, getMemorySummaryForUser, memoryViewerOf } from './memory-tools.ts'
 import { registerMemoryAutopilot, registerPackSection, reviewAllWindows } from './memory-autopilot.ts'
 import {
   loadSharedMemory,
@@ -73,6 +73,31 @@ export function apply(ctx: Context): void {
     tryRegister()
   } catch (error) {
     ctx.logger?.warn?.('[dsh-memory] 按轮装配接线失败（工具路径不受影响）:',
+      error instanceof Error ? error.message : String(error))
+  }
+
+  // v2.3 全模式工具挂载（宪章 §0：记忆是实例级资产，跨所有会话与渠道共享；
+  // 插件入口文档化用法即「agent 创建时调用 registerMemoryTools」——此前只有
+  // digital-twin 预设行与 im-channel 两个挂载方，标准等其他模式拿不到记忆工具）。
+  // 观察宿主 agent 生命周期：视角未登记的会话按主人身份挂载（Web 即主人）；
+  // IM 会话由 im-channel 按行动者身份先行挂载，检测到已登记即跳过不覆盖——
+  // 即便时序交错，WeakMap 后写覆盖 = 身份以后挂者为准，两种顺序结果一致。
+  // 失败只影响新会话的工具面，绝不击穿宿主。
+  try {
+    const events = ctx as unknown as { on?: (event: string, handler: (...args: never[]) => unknown) => void }
+    if (typeof events.on === 'function') {
+      events.on('agent/status', (payload: unknown): void => {
+        try {
+          const agentCtx = (payload as { agent?: { ctx?: unknown } } | undefined)?.agent?.ctx
+          if (agentCtx === null || typeof agentCtx !== 'object') return
+          if (memoryViewerOf(agentCtx) !== undefined) return // 已挂载（IM 按行动者身份），不覆盖
+          registerMemoryTools(agentCtx as Context, 'master', true)
+        } catch { /* 单会话挂载失败不影响其他会话 */ }
+      })
+      ctx.logger?.info?.('[dsh-memory] 全模式记忆工具挂载已启用（未登记会话按主人身份，IM 由渠道覆盖）')
+    }
+  } catch (error) {
+    ctx.logger?.warn?.('[dsh-memory] 全模式工具挂载注册失败（工具路径不受影响）:',
       error instanceof Error ? error.message : String(error))
   }
 
